@@ -3,14 +3,19 @@
 #define NOMINMAX
 #define _NO_CRT_STDIO_INLINE
 #include <windows.h>
+#include <timeapi.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_2.h>
 #include <dxgidebug.h>
 #include <d3dcompiler.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "./ext/stb_image.h"
+
 #include "base.h"
 #include "mathematical_objects.h"
+#include "game.h"
 
 #include "mathematical_objects.c"
 
@@ -91,12 +96,14 @@ typedef struct
 
 typedef struct
 {
+  // window
   HWND window;
   s32 window_width;
   s32 window_height;
   
   OS_Input input;
   
+  // D3D11 STUFF
   s32 reso_width, reso_height;
   ID3D11Device *device;
   ID3D11DeviceContext *device_context;
@@ -111,38 +118,16 @@ typedef struct
   ID3D11Buffer *sbuffer_main;
   ID3D11ShaderResourceView *sbuffer_view_main;
   
+  s32 game_diffse_sheet_width;
+  s32 game_diffse_sheet_height;
+  ID3D11ShaderResourceView *game_diffuse_sheet_view;
+  
   ID3D11RasterizerState *rasterizer_fill_no_cull_ccw;
   
   ID3D11SamplerState *sampler_point_all;
   
   ID3D11BlendState *blend_blend;
 } Application_State;
-
-#define Game_MaxQuads 1024
-typedef struct
-{
-  v3f p;
-  v3f dims;
-  v4f colour;
-} Game_Quad;
-
-typedef struct
-{
-  Game_Quad *quads;
-  u64 capacity;
-  u64 count;
-} Game_QuadArray;
-
-inline function Game_Quad *
-game_add_rect(Game_QuadArray *quads, v3f p, v3f dims, v4f colour)
-{
-  Assert(quads->count < quads->capacity);
-  Game_Quad *result = quads->quads + quads->count++;
-  result->p = p;
-  result->dims = dims;
-  result->colour = colour;
-  return(result);
-}
 
 function void
 prevent_dpi_scaling(void)
@@ -215,7 +200,8 @@ dx11_create_device(Application_State *app)
   }
 }
 
-function void dx11_create_swap_chain(Application_State *app)
+function void
+dx11_create_swap_chain(Application_State *app)
 {
   IDXGIDevice2 *dxgi_device;
   IDXGIAdapter *dxgi_adapter;
@@ -373,14 +359,73 @@ dx11_create_game_main_state(Application_State *app)
         .Buffer = { .NumElements = Game_MaxQuads }
       };
       
-      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)app->sbuffer_main, 
-                                            &sbuffer_srv_desc, &app->sbuffer_view_main);
+      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)app->sbuffer_main, &sbuffer_srv_desc, &app->sbuffer_view_main);
+      
+      s32 tex_width, tex_height, tex_comps;
+      u8 *tex_data = stbi_load("../res/textures/sheet.png", &tex_width, &tex_height, &tex_comps, 4);
+      Assert(tex_data != 0);
+      if (tex_data)
+      {
+        D3D11_TEXTURE2D_DESC texture_desc =
+        {
+          .Width = tex_width,
+          .Height = tex_height,
+          .MipLevels = 1,
+          .ArraySize = 1,
+          .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+          .SampleDesc = { 1, 0 },
+          .Usage = D3D11_USAGE_IMMUTABLE,
+          .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+          .CPUAccessFlags = 0,
+          .MiscFlags = 0,
+        };
+        
+        D3D11_SUBRESOURCE_DATA texture_data =
+        {
+          .pSysMem = tex_data,
+          .SysMemPitch = 4 * tex_width,
+          .SysMemSlicePitch = 0,
+        };
+        
+        ID3D11Texture2D *game_diffuse_sheet_tex = 0;
+        ID3D11Device_CreateTexture2D(app->device, &texture_desc, &texture_data, &game_diffuse_sheet_tex);
+        Assert(game_diffuse_sheet_tex != 0);
+        if (game_diffuse_sheet_tex)
+        {
+          ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)game_diffuse_sheet_tex, 0, &app->game_diffuse_sheet_view);
+          Assert(app->game_diffuse_sheet_view != 0);
+          if (app->game_diffuse_sheet_view)
+          {
+            app->game_diffse_sheet_width = tex_width;
+            app->game_diffse_sheet_height = tex_height;
+          }
+          else
+          {
+            // NOTE(cj): LOGGING
+          }
+          
+          ID3D11Texture2D_Release(game_diffuse_sheet_tex);
+        }
+        else
+        {
+          // NOTE(cj): LOGGING
+        }
+        
+        stbi_image_free(tex_data);
+      }
+      else
+      {
+        // NOTE(cj): LOGGING
+      }
+    }
+    else
+    {
+      // NOTE(cj): LOGGING
     }
 #if 0
     cbuf_desc.ByteWidth = sizeof(DX11_Game_CBuffer1);
     if (SUCCEEDED(ID3D11Device1_CreateBuffer(g_dx11_dev, &cbuf_desc, 0, &g_dx11_game_cbuffer1)))
     {
-      
     }
 #endif
   }
@@ -649,7 +694,127 @@ m_arena_pop(M_Arena *arena, u64 pop_size)
 
 function Application_State g_application;
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
+inline function Game_Quad *
+game_acquire_quad(Game_QuadArray *quads)
+{
+  Assert(quads->count < quads->capacity);
+  Game_Quad *result = quads->quads + quads->count++;
+  return(result);
+}
+
+inline function Game_Quad *
+game_add_rect(Game_QuadArray *quads, v3f p, v3f dims, v4f colour)
+{
+  Game_Quad *result = game_acquire_quad(quads);
+  result->p = p;
+  result->dims = dims;
+  result->colour = colour;
+  return(result);
+}
+
+inline function Game_Quad *
+game_add_tex(Game_QuadArray *quads, v3f p, v3f dims, v4f mod)
+{
+  Game_Quad *result = game_add_rect(quads, p, dims, mod);
+  result->uvs[0] = (v2f){ 0.0f, 1.0f };
+  result->uvs[1] = (v2f){ 0.0f, 0.0f };
+  result->uvs[2] = (v2f){ 1.0f, 1.0f };
+  result->uvs[3] = (v2f){ 1.0f, 0.0f };
+  return(result);
+}
+
+inline function Game_Quad *
+game_add_tex_clipped(Game_QuadArray *quads,
+                     v3f p, v3f dims,
+                     v2f clip_p, v2f clip_dims,
+                     v4f mod,
+                     b32 flip_horizontal)
+{
+  Game_Quad *result = game_add_rect(quads, p, dims, mod);
+  f32 x_start = clip_p.x / (f32)quads->tex_width;
+  f32 x_end = (clip_p.x + clip_dims.x) / (f32)quads->tex_width;
+  
+  f32 y_start = clip_p.y / (f32)quads->tex_height;
+  f32 y_end = (clip_p.y + clip_dims.y) / (f32)quads->tex_height;
+  
+  if (flip_horizontal)
+  {
+    result->uvs[0] = (v2f){ x_start, y_end };
+    result->uvs[1] = (v2f){ x_start, y_start };
+    result->uvs[2] = (v2f){ x_end, y_end };
+    result->uvs[3] = (v2f){ x_end, y_start };
+  }
+  else
+  {
+    result->uvs[0] = (v2f){ x_end, y_end };
+    result->uvs[1] = (v2f){ x_end, y_start };
+    result->uvs[2] = (v2f){ x_start, y_end };
+    result->uvs[3] = (v2f){ x_start, y_start };
+  }
+  return(result);
+}
+
+function void
+game_init(Game_State *game, s32 tex_width, s32 tex_height)
+{
+  game->arena = m_arena_reserve(MB(2));
+  game->quads = (Game_QuadArray)
+  {
+    .quads = M_Arena_PushArray(game->arena, Game_Quad, Game_MaxQuads),
+    .capacity = Game_MaxQuads,
+    .count = 0,
+    .tex_width = tex_width,
+    .tex_height = tex_height,
+  };
+}
+
+function void
+game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
+{
+  Entity *player = &game->player;
+  f32 move_comp = 64.0f;
+  f32 desired_move_x = 0.0f;
+  f32 desired_move_y = 0.0f;
+  if (OS_KeyHeld(input, OS_Input_KeyType_W))
+  {
+    desired_move_y += game_update_secs * move_comp;
+  }
+  
+  if (OS_KeyHeld(input, OS_Input_KeyType_A))
+  {
+    desired_move_x -= game_update_secs * move_comp;
+    player->last_face_dir = 0;
+  }
+  
+  if (OS_KeyHeld(input, OS_Input_KeyType_S))
+  {
+    desired_move_y -= game_update_secs * move_comp;
+  }
+  
+  if (OS_KeyHeld(input, OS_Input_KeyType_D))
+  {
+    desired_move_x += game_update_secs * move_comp;
+    player->last_face_dir = 1;
+  }
+  
+  if (desired_move_x && desired_move_y)
+  {
+    desired_move_x *= 0.70710678118f;
+    desired_move_y *= 0.70710678118f;
+  }
+  
+  player->p.x += desired_move_x;
+  player->p.y += desired_move_y;
+  
+  game_add_tex_clipped(&game->quads,
+                       player->p, (v3f){96,96,0},
+                       (v2f){0,0}, (v2f){32,32},
+                       (v4f){1,1,1,1},
+                       player->last_face_dir);
+}
+
+int WINAPI
+WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
 {
   (void)hInstance;
   (void)hPrevInstance;
@@ -657,6 +822,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int
   (void)nShowCmd;
   
   prevent_dpi_scaling();
+  
+  timeBeginPeriod(1);
+  
+  LARGE_INTEGER w32_perf_frequency;
+  QueryPerformanceFrequency(&w32_perf_frequency);
+  
+  DEVMODE dev_mode;
+  EnumDisplaySettingsA(0, ENUM_CURRENT_SETTINGS, &dev_mode);
+  u64 refresh_rate = dev_mode.dmDisplayFrequency;
+  f32 seconds_per_frame = 1.0f / (f32)refresh_rate;
   
   WNDCLASS wnd_class =
   {
@@ -704,16 +879,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int
     {
       ShowWindow(g_application.window, SW_SHOW);
       
-      M_Arena *main_arena = m_arena_reserve(MB(2));
-      Game_QuadArray game_quads = 
-      {
-        .quads = M_Arena_PushArray(main_arena, Game_Quad, Game_MaxQuads),
-        .capacity = Game_MaxQuads,
-        .count = 0,
-      };
-      
+      Game_State game = {0};
+      game_init(&game, g_application.game_diffse_sheet_width, g_application.game_diffse_sheet_height);
+      LARGE_INTEGER perf_counter_begin;
       while (1)
       {
+        QueryPerformanceCounter(&perf_counter_begin);
         for (u32 key = 0; key < OS_Input_KeyType_Count; ++key)
         {
           g_application.input.key[key] &= ~(OS_Input_InteractFlag_Pressed | OS_Input_InteractFlag_Released);
@@ -748,7 +919,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int
           ExitProcess(0);
         }
         
-        game_add_rect(&game_quads, (v3f){0, 0, 0}, (v3f){1260,700,0}, (v4f){1,0,0,1});
+        game_update_and_render(&game, input, seconds_per_frame);
         
         D3D11_VIEWPORT viewport =
         {
@@ -774,10 +945,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int
         ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_main, 0, 0);
         ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
         ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
+        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
         
         ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
         ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
         
+        Game_QuadArray game_quads = game.quads;
         if (game_quads.count)
         {
           D3D11_MAPPED_SUBRESOURCE mapped_subresource;
@@ -790,7 +963,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int
         ID3D11DeviceContext_ClearState(g_application.device_context);
         IDXGISwapChain1_Present(g_application.swap_chain, 1, 0);
         
-        game_quads.count = 0;
+        game.quads.count = 0;
+        
+        LARGE_INTEGER perf_counter_end;
+        QueryPerformanceCounter(&perf_counter_end);
+        
+        f32 seconds_used_for_work = (f32)(perf_counter_end.QuadPart - perf_counter_begin.QuadPart) / (f32)(w32_perf_frequency.QuadPart);
+        
+        if (seconds_used_for_work < seconds_per_frame)
+        {
+          Sleep((u32)((seconds_per_frame - seconds_used_for_work) * 1000.0f));
+        }
       }
     }
   }
