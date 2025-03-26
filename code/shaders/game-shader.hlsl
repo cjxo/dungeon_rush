@@ -1,6 +1,8 @@
 cbuffer ConstantStore0 : register(b0)
 {
   float4x4 proj;
+	// assume world is standard.
+	float4x4 world_to_cam;
 };
 
 struct Quad
@@ -9,6 +11,7 @@ struct Quad
   float3 dims;  
   float4 colour;
   float2 uvs[4];
+	uint tex_id;
 };
 
 struct VertexShader_Output
@@ -17,6 +20,7 @@ struct VertexShader_Output
 	float3 world_p    : World_P;
   float4 colour     : Colour_Mod;
   float2 uv         : Tex_UV;
+	uint   tex_id     : Tex_ID;
 };
 
 // texture registers
@@ -49,18 +53,24 @@ vs_main(uint iid : SV_InstanceID, uint vid : SV_VertexID)
   Quad instance   = g_quad_instances[iid];
   float3 vertex   = (g_quad_vertices[vid] * instance.dims + instance.p);
 
-	result.p        = mul(proj, float4(vertex, 1.0f));
+	result.p        = mul(proj, mul(world_to_cam, float4(vertex, 1.0f)));
 	result.world_p  = vertex;
   result.colour   = instance.colour;
 	result.uv       = instance.uvs[vid];
+	result.tex_id   = instance.tex_id;
 	return(result);
 }
 
 float4
 ps_main(VertexShader_Output inp) : SV_Target
 {
-	float4 sample = inp.colour;
-  float4 texel = g_sheet_diffuse.Sample(g_pointsampler, inp.uv);
-	sample *= texel;
-	return(sample);
+  float4 sample = inp.colour;
+  if (inp.tex_id)
+  {
+    float4 texel = g_sheet_diffuse.Sample(g_pointsampler, inp.uv);
+    sample *= texel;
+  }
+
+  if (sample.a == 0) discard;
+  return(sample);
 }

@@ -92,6 +92,7 @@ typedef struct
 typedef struct
 {
   m44 proj;
+  m44 world_to_cam;
 } DX11_Game_CBuffer0;
 
 typedef struct
@@ -325,20 +326,7 @@ dx11_create_game_main_state(Application_State *app)
     .StructureByteStride = 0,
   };
   
-  f32 half_reso_x = (f32)app->reso_width * 0.5f;
-  f32 half_reso_y = (f32)app->reso_height * 0.5f;
-  DX11_Game_CBuffer0 new_cbuf0 =
-  {
-    .proj = m44_make_orthographic_z01(-half_reso_x, half_reso_x, half_reso_y, -half_reso_y, -50.0f, 50.0f),
-  };
-  
-  D3D11_SUBRESOURCE_DATA new_cbuf0_data =
-  {
-    .pSysMem = &new_cbuf0,
-    .SysMemPitch = sizeof(DX11_Game_CBuffer0)
-  };
-  
-  if (SUCCEEDED(ID3D11Device_CreateBuffer(app->device, &cbuf_desc, &new_cbuf0_data, &app->cbuffer0_main)))
+  if (SUCCEEDED(ID3D11Device_CreateBuffer(app->device, &cbuf_desc, 0, &app->cbuffer0_main)))
   {
     D3D11_BUFFER_DESC sbuffer_desc =
     {
@@ -709,6 +697,7 @@ game_add_rect(Game_QuadArray *quads, v3f p, v3f dims, v4f colour)
   result->p = p;
   result->dims = dims;
   result->colour = colour;
+  result->tex_id = 0;
   return(result);
 }
 
@@ -720,6 +709,7 @@ game_add_tex(Game_QuadArray *quads, v3f p, v3f dims, v4f mod)
   result->uvs[1] = (v2f){ 0.0f, 0.0f };
   result->uvs[2] = (v2f){ 1.0f, 1.0f };
   result->uvs[3] = (v2f){ 1.0f, 0.0f };
+  result->tex_id = 1;
   return(result);
 }
 
@@ -739,18 +729,20 @@ game_add_tex_clipped(Game_QuadArray *quads,
   
   if (flip_horizontal)
   {
-    result->uvs[0] = (v2f){ x_start, y_end };
-    result->uvs[1] = (v2f){ x_start, y_start };
-    result->uvs[2] = (v2f){ x_end, y_end };
-    result->uvs[3] = (v2f){ x_end, y_start };
-  }
-  else
-  {
     result->uvs[0] = (v2f){ x_end, y_end };
     result->uvs[1] = (v2f){ x_end, y_start };
     result->uvs[2] = (v2f){ x_start, y_end };
     result->uvs[3] = (v2f){ x_start, y_start };
   }
+  else
+  {
+    result->uvs[0] = (v2f){ x_start, y_end };
+    result->uvs[1] = (v2f){ x_start, y_start };
+    result->uvs[2] = (v2f){ x_end, y_end };
+    result->uvs[3] = (v2f){ x_end, y_start };
+  }
+  
+  result->tex_id = 1;
   return(result);
 }
 
@@ -805,6 +797,8 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
   
   player->p.x += desired_move_x;
   player->p.y += desired_move_y;
+  
+  game_add_rect(&game->quads, (v3f){0}, (v3f){50,50,0}, (v4f){1,0,0,1});
   
   game_add_tex_clipped(&game->quads,
                        player->p, (v3f){96,96,0},
@@ -931,6 +925,28 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           .MaxDepth = 1,
         };
         
+        //
+        // // NOTE(cj): Cbuf0 - proj and cam
+        //
+        f32 half_reso_x = (f32)g_application.reso_width * 0.5f;
+        f32 half_reso_y = (f32)g_application.reso_height * 0.5f;
+        DX11_Game_CBuffer0 new_cbuf0 =
+        {
+          .proj = m44_make_orthographic_z01(-half_reso_x, half_reso_x, half_reso_y, -half_reso_y, -50.0f, 50.0f),
+          .world_to_cam = 
+          {
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            -game.player.p.x, -game.player.p.y, -game.player.p.z, 1,
+          }
+        };
+        
+        D3D11_MAPPED_SUBRESOURCE mapped_subresource;
+        ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+        CopyMemory(mapped_subresource.pData, &new_cbuf0, sizeof(new_cbuf0));
+        ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0);
+        
         f32 clear_colour[4] = {0}; 
         ID3D11DeviceContext_ClearRenderTargetView(g_application.device_context, g_application.render_target, clear_colour);
         
@@ -953,7 +969,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         Game_QuadArray game_quads = game.quads;
         if (game_quads.count)
         {
-          D3D11_MAPPED_SUBRESOURCE mapped_subresource;
           ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
           CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);

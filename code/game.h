@@ -10,6 +10,7 @@ typedef struct
   v3f dims;
   v4f colour;
   v2f uvs[4];
+  u32 tex_id;
 } Game_Quad;
 
 typedef struct
@@ -17,7 +18,6 @@ typedef struct
   Game_Quad *quads;
   u64 capacity;
   u64 count;
-  
   
   // R_Handle tex;
   s32 tex_width;
