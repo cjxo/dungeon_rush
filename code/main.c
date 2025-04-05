@@ -758,6 +758,19 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     .tex_width = tex_width,
     .tex_height = tex_height,
   };
+
+  Entity *player = &game->player;
+  player->current_animation_secs = 0.0f;
+  player->duration_animation_secs = 0.15f;
+  player->animation_frame_idx = 0;
+  for (u32 idx = 0; idx < ArrayCount(player->walking_animation); ++idx)
+  {
+    player->walking_animation[idx] = (Animation_Frame)
+    {
+      (v2f){ 16.0f * (f32)(idx), 16.0f },
+      (v2f){ 16.0f, 16.0f },
+    };
+  }
 }
 
 function void
@@ -788,23 +801,46 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
     desired_move_x += game_update_secs * move_comp;
     player->last_face_dir = 1;
   }
-  
+
   if (desired_move_x && desired_move_y)
   {
     desired_move_x *= 0.70710678118f;
     desired_move_y *= 0.70710678118f;
   }
-  
+ 
   player->p.x += desired_move_x;
   player->p.y += desired_move_y;
   
   game_add_rect(&game->quads, (v3f){0}, (v3f){50,50,0}, (v4f){1,0,0,1});
-  
-  game_add_tex_clipped(&game->quads,
-                       player->p, (v3f){96,96,0},
-                       (v2f){0,0}, (v2f){32,32},
-                       (v4f){1,1,1,1},
-                       player->last_face_dir);
+
+  if (desired_move_x || desired_move_y)
+  {
+    Animation_Frame walk_frame = player->walking_animation[player->animation_frame_idx];
+    game_add_tex_clipped(&game->quads,
+                         player->p, (v3f){64,64,0},
+                         walk_frame.clip_p, walk_frame.clip_dims,
+                         (v4f){1,1,1,1},
+                         player->last_face_dir);
+
+    b32 time_is_up = player->current_animation_secs > player->duration_animation_secs;
+    if (time_is_up)
+    {
+      player->current_animation_secs = 0.0f;
+      player->animation_frame_idx = (player->animation_frame_idx + 1) % ArrayCount(player->walking_animation);
+    }
+    else
+    {
+      player->current_animation_secs += game_update_secs;
+    } 
+  }
+  else
+  {
+    game_add_tex_clipped(&game->quads,
+                         player->p, (v3f){64,64,0},
+                         (v2f){0,0}, (v2f){16,16},
+                         (v4f){1,1,1,1},
+                         player->last_face_dir);
+  } 
 }
 
 int WINAPI

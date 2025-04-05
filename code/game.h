@@ -3,6 +3,11 @@
 #ifndef GAME_H
 #define GAME_H
 
+typedef union
+{
+  u64 h[1];
+} R_Handle;
+
 #define Game_MaxQuads 1024
 typedef struct
 {
@@ -24,22 +29,27 @@ typedef struct
   s32 tex_height;
 } Game_QuadArray;
 
-typedef union
-{
-  u64 h[1];
-} R_Handle;
-
 typedef u64 Entity_Flag;
 typedef u64 Entity_Type;
+
+typedef struct
+{
+  v2f clip_p;
+  v2f clip_dims;
+} Animation_Frame;
 
 typedef struct Entity Entity;
 struct Entity
 {
   Entity_Flag flags;
   Entity_Type type;
-  
   b32 last_face_dir;
   
+  f32 current_animation_secs;
+  f32 duration_animation_secs;
+  u32 animation_frame_idx;
+  Animation_Frame walking_animation[4];
+
   v3f p;
 };
 
