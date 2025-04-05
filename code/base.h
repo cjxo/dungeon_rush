@@ -27,6 +27,12 @@ typedef s32 b32;
 # define Assert(c) (void)(c)
 #endif
 
+#define InvalidDefaultCase() \
+default: \
+{\
+Assert(0);\
+} break
+
 #define ArrayCount(a) (sizeof(a)/sizeof((a)[0]))
 #define Min(a,b) (((a)<(b))?(a):(b))
 #define Max(a,b) (((a)>(b))?(a):(b))

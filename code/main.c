@@ -758,89 +758,189 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     .tex_width = tex_width,
     .tex_height = tex_height,
   };
-
-  Entity *player = &game->player;
-  player->current_animation_secs = 0.0f;
-  player->duration_animation_secs = 0.15f;
-  player->animation_frame_idx = 0;
-  for (u32 idx = 0; idx < ArrayCount(player->walking_animation); ++idx)
+  
+  // player entity
   {
-    player->walking_animation[idx] = (Animation_Frame)
+    Entity *player = game->entities + game->entity_count++;
+    player->flags = 0;
+    player->type = EntityType_Player;
+    player->last_face_dir = 0;
+    
+    Animation_Config *anim_config = &(game->walk_animation);
+    anim_config->current_secs = 0.0f;
+    anim_config->duration_secs = 0.15f;
+    anim_config->frame_idx = 0;
+    for (u32 idx = 0; idx < ArrayCount(anim_config->frames); ++idx)
     {
-      (v2f){ 16.0f * (f32)(idx), 16.0f },
-      (v2f){ 16.0f, 16.0f },
+      anim_config->frames[idx] = (Animation_Frame)
+      {
+        (v2f){ 16.0f * (f32)(idx), 16.0f },
+        (v2f){ 16.0f, 16.0f },
+      };
+    }
+    
+    player->attack_count = 1;
+    player->attacks[0] = (Attack)
+    {
+      .type = AttackType_ShadowSlash,
+      .current_secs = 1.0f,
+      .interval_secs = 1.0f,
+      .damage = 6,
     };
+    
+    anim_config = &(player->attacks[0].animation);
+    anim_config->current_secs = 0.0f;
+    anim_config->duration_secs = 0.035f;
+    anim_config->frame_idx = 0;
+    for (u32 idx = 0; idx < ArrayCount(anim_config->frames); ++idx)
+    {
+      anim_config->frames[idx] = (Animation_Frame)
+      {
+        (v2f){ 16.0f * (f32)(idx), 32.0f },
+        (v2f){ 16.0f, 16.0f },
+      };
+    }
+    
   }
+}
+
+typedef struct
+{
+  Animation_Frame frame;
+  b32 is_full_cycle;
+} Animation_Tick_Result;
+
+function Animation_Tick_Result
+tick_animation(Animation_Config *anim, f32 seconds_elapsed)
+{
+  Animation_Tick_Result result;
+  result.frame = anim->frames[anim->frame_idx];
+  b32 is_full_cycle = 0;
+  b32 time_is_up = anim->current_secs >= anim->duration_secs;
+  if (time_is_up)
+  {
+    anim->current_secs = 0.0f;
+    anim->frame_idx += 1;
+    if (anim->frame_idx == ArrayCount(anim->frames))
+    {
+      anim->frame_idx = 0;
+      is_full_cycle = 1;
+    }
+  }
+  else
+  {
+    anim->current_secs += seconds_elapsed;
+  } 
+  
+  result.is_full_cycle = is_full_cycle;
+  return(result);
 }
 
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
-  Entity *player = &game->player;
-  f32 move_comp = 64.0f;
-  f32 desired_move_x = 0.0f;
-  f32 desired_move_y = 0.0f;
-  if (OS_KeyHeld(input, OS_Input_KeyType_W))
+  for (u64 entity_idx = 0;
+       entity_idx < game->entity_count;
+       ++entity_idx)
   {
-    desired_move_y += game_update_secs * move_comp;
-  }
-  
-  if (OS_KeyHeld(input, OS_Input_KeyType_A))
-  {
-    desired_move_x -= game_update_secs * move_comp;
-    player->last_face_dir = 0;
-  }
-  
-  if (OS_KeyHeld(input, OS_Input_KeyType_S))
-  {
-    desired_move_y -= game_update_secs * move_comp;
-  }
-  
-  if (OS_KeyHeld(input, OS_Input_KeyType_D))
-  {
-    desired_move_x += game_update_secs * move_comp;
-    player->last_face_dir = 1;
-  }
-
-  if (desired_move_x && desired_move_y)
-  {
-    desired_move_x *= 0.70710678118f;
-    desired_move_y *= 0.70710678118f;
-  }
- 
-  player->p.x += desired_move_x;
-  player->p.y += desired_move_y;
-  
-  game_add_rect(&game->quads, (v3f){0}, (v3f){50,50,0}, (v4f){1,0,0,1});
-
-  if (desired_move_x || desired_move_y)
-  {
-    Animation_Frame walk_frame = player->walking_animation[player->animation_frame_idx];
-    game_add_tex_clipped(&game->quads,
-                         player->p, (v3f){64,64,0},
-                         walk_frame.clip_p, walk_frame.clip_dims,
-                         (v4f){1,1,1,1},
-                         player->last_face_dir);
-
-    b32 time_is_up = player->current_animation_secs > player->duration_animation_secs;
-    if (time_is_up)
+    Entity *entity = game->entities + entity_idx;
+    switch (entity->type)
     {
-      player->current_animation_secs = 0.0f;
-      player->animation_frame_idx = (player->animation_frame_idx + 1) % ArrayCount(player->walking_animation);
+      case EntityType_Player:
+      {
+        //
+        // NOTE(cj): Movement
+        //
+        f32 move_comp = 64.0f;
+        f32 desired_move_x = 0.0f;
+        f32 desired_move_y = 0.0f;
+        if (OS_KeyHeld(input, OS_Input_KeyType_W))
+        {
+          desired_move_y += game_update_secs * move_comp;
+        }
+        
+        if (OS_KeyHeld(input, OS_Input_KeyType_A))
+        {
+          desired_move_x -= game_update_secs * move_comp;
+          entity->last_face_dir = 0;
+        }
+        
+        if (OS_KeyHeld(input, OS_Input_KeyType_S))
+        {
+          desired_move_y -= game_update_secs * move_comp;
+        }
+        
+        if (OS_KeyHeld(input, OS_Input_KeyType_D))
+        {
+          desired_move_x += game_update_secs * move_comp;
+          entity->last_face_dir = 1;
+        }
+        
+        if (desired_move_x && desired_move_y)
+        {
+          desired_move_x *= 0.70710678118f;
+          desired_move_y *= 0.70710678118f;
+        }
+        
+        entity->p.x += desired_move_x;
+        entity->p.y += desired_move_y;
+        
+        //
+        // NOTE(cj): Drawing/Animation update
+        //
+        if (desired_move_x || desired_move_y)
+        {
+          Animation_Frame walk_frame = tick_animation(&game->walk_animation, game_update_secs).frame;
+          game_add_tex_clipped(&game->quads,
+                               entity->p, (v3f){64,64,0},
+                               walk_frame.clip_p, walk_frame.clip_dims,
+                               (v4f){1,1,1,1},
+                               entity->last_face_dir);
+        }
+        else
+        {
+          game_add_tex_clipped(&game->quads,
+                               entity->p, (v3f){64,64,0},
+                               (v2f){0,0}, (v2f){16,16},
+                               (v4f){1,1,1,1},
+                               entity->last_face_dir);
+        }
+        
+        // TODO(cj): Should Attacks be generated entities?
+        //
+        // NOTE(cj): Update Attacks
+        //
+        for (u64 attack_idx = 0;
+             attack_idx < entity->attack_count;
+             ++attack_idx)
+        {
+          
+          Attack *attack = entity->attacks + attack_idx;
+          if (attack->current_secs >= attack->interval_secs)
+          {
+            Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
+            
+            game_add_tex_clipped(&game->quads,
+                                 v3f_add(entity->p, (v3f){ entity->last_face_dir ? 32.0f : -32.0f, 0.0f, 0.0f }), (v3f){64,64,0},
+                                 tick_result.frame.clip_p, tick_result.frame.clip_dims,
+                                 (v4f){1,1,1,1},
+                                 entity->last_face_dir);
+            
+            if (tick_result.is_full_cycle)
+            {
+              attack->current_secs = 0.0f;
+            }
+          }
+          else
+          {
+            attack->current_secs += game_update_secs;
+          }
+        }
+      } break;
+      
+      InvalidDefaultCase();
     }
-    else
-    {
-      player->current_animation_secs += game_update_secs;
-    } 
   }
-  else
-  {
-    game_add_tex_clipped(&game->quads,
-                         player->p, (v3f){64,64,0},
-                         (v2f){0,0}, (v2f){16,16},
-                         (v4f){1,1,1,1},
-                         player->last_face_dir);
-  } 
 }
 
 int WINAPI
@@ -961,6 +1061,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           .MaxDepth = 1,
         };
         
+        Entity *player = game.entities;
         //
         // // NOTE(cj): Cbuf0 - proj and cam
         //
@@ -974,7 +1075,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
             1, 0, 0, 0,
             0, 1, 0, 0,
             0, 0, 1, 0,
-            -game.player.p.x, -game.player.p.y, -game.player.p.z, 1,
+            -player->p.x, -player->p.y, -player->p.z, 1,
           }
         };
         

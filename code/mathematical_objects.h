@@ -21,6 +21,8 @@ typedef union
   f32 v[3];
 } v3f;
 
+inline function v3f v3f_add(v3f a, v3f b);
+
 typedef union
 {
   struct
@@ -43,6 +45,6 @@ typedef union
   f32 m[4][4];
 } m44;
 
-inline static m44 m44_make_orthographic_z01(f32 left, f32 right, f32 top, f32 bottom, f32 near_plane, f32 far_plane);
+inline function m44 m44_make_orthographic_z01(f32 left, f32 right, f32 top, f32 bottom, f32 near_plane, f32 far_plane);
 
 #endif //MATHEMATICAL_OBJECTS_H

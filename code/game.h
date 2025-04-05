@@ -29,14 +29,43 @@ typedef struct
   s32 tex_height;
 } Game_QuadArray;
 
-typedef u64 Entity_Flag;
-typedef u64 Entity_Type;
-
 typedef struct
 {
   v2f clip_p;
   v2f clip_dims;
 } Animation_Frame;
+
+typedef struct
+{
+  f32 current_secs;
+  f32 duration_secs;
+  u32 frame_idx;
+  Animation_Frame frames[4];
+} Animation_Config;
+
+typedef u32 Attack_Type;
+enum
+{
+  AttackType_ShadowSlash,
+  AttackType_Count,
+};
+
+typedef struct
+{
+  Attack_Type type;
+  Animation_Config animation;
+  f32 current_secs;
+  f32 interval_secs;
+  s32 damage;
+} Attack;
+
+typedef u64 Entity_Flag;
+typedef u64 Entity_Type;
+enum
+{
+  EntityType_Player,
+  EntityType_Count,
+};
 
 typedef struct Entity Entity;
 struct Entity
@@ -45,11 +74,9 @@ struct Entity
   Entity_Type type;
   b32 last_face_dir;
   
-  f32 current_animation_secs;
-  f32 duration_animation_secs;
-  u32 animation_frame_idx;
-  Animation_Frame walking_animation[4];
-
+  u32 attack_count;
+  Attack attacks[4];
+  
   v3f p;
 };
 
@@ -57,7 +84,12 @@ typedef struct
 {
   M_Arena *arena;
   Game_QuadArray quads;
-  Entity player;
+  
+  u64 entity_count;
+  Entity entities[512];
+  
+  Animation_Config walk_animation;
+  Animation_Config shadow_slash_animation;
 } Game_State;
 
 #endif //GAME_H
