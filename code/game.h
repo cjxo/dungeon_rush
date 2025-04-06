@@ -97,8 +97,8 @@ typedef struct
   u64 entity_count;
   Entity entities[512];
   
+  f32 skull_enemy_spawn_timer_sec;
   Animation_Config walk_animation;
-  Animation_Config shadow_slash_animation;
 } Game_State;
 
 inline function Entity *make_entity(Game_State *game, Entity_Type type, Entity_Flag flags);

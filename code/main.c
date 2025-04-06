@@ -840,9 +840,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       (v2f){ 12.0f, 11.0f }
     };
   }
-  
-  // test entity
-  make_enemy_skull(game, (v3f) { 512, 0, 0 });
 }
 
 typedef struct
@@ -880,6 +877,17 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
+  if (game->skull_enemy_spawn_timer_sec > 1.0f)
+  {
+    game->skull_enemy_spawn_timer_sec = 0.0f;
+    // test entity
+    make_enemy_skull(game, (v3f) { 512, 0, 0 });
+  }
+  else
+  {
+    game->skull_enemy_spawn_timer_sec += game_update_secs;
+  }
+  
   // the player is always at 0th idx
   Entity *player = game->entities;
   for (u64 entity_idx = 0;
@@ -979,7 +987,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
             
             for (u64 entity_to_collide_idx = 1;
-                 entity_to_collide_idx< game->entity_count;
+                 entity_to_collide_idx < game->entity_count;
                  ++entity_to_collide_idx)
             {
               Entity *possible_collision = game->entities + entity_to_collide_idx;
@@ -1002,11 +1010,11 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                 // Add a notion of HP!
                 if (x_test && y_test)
                 {
-                  --game->entity_count;
                   if (entity_to_collide_idx != game->entity_count)
                   {
-                    game->entities[game->entity_count] = game->entities[entity_to_collide_idx];
+                    game->entities[entity_to_collide_idx] = game->entities[game->entity_count - 1];
                   }
+                  --game->entity_count;
                 }
               }
             }
