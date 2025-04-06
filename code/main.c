@@ -746,6 +746,25 @@ game_add_tex_clipped(Game_QuadArray *quads,
   return(result);
 }
 
+inline function Entity *
+make_entity(Game_State *game, Entity_Type type, Entity_Flag flags)
+{
+  Assert((game->entity_count + 1) < ArrayCount(game->entities));
+  Entity *result = game->entities + game->entity_count++;
+  ClearStructP(result);
+  result->type = type;
+  result->flags = flags;
+  return(result);
+}
+
+inline function Entity *
+make_enemy_skull(Game_State *game, v3f p)
+{
+  Entity *result = make_entity(game, EntityType_Skull, EntityFlag_Hostile);
+  result->p = p;
+  return(result);
+}
+
 function void
 game_init(Game_State *game, s32 tex_width, s32 tex_height)
 {
@@ -761,7 +780,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
   
   // player entity
   {
-    Entity *player = game->entities + game->entity_count++;
+    Entity *player = make_entity(game, EntityType_Player, 0);
     player->flags = 0;
     player->type = EntityType_Player;
     player->last_face_dir = 0;
@@ -792,7 +811,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     anim_config->current_secs = 0.0f;
     anim_config->duration_secs = 0.04f;
     anim_config->frame_idx = 0;
-
+    
     anim_config->frames[0] = (Animation_Frame)
     {
       (v2f){ 0.0f, 32.0f },
@@ -806,14 +825,14 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       (v2f){ 16.0f, 32.0f },
       (v2f){ -3.0f, -16.0f }
     };
-
+    
     anim_config->frames[2] = (Animation_Frame)
     {
       (v2f){ 48.0f, 32.0f },
       (v2f){ 32.0f, 32.0f },
       (v2f){ 14.0f, 8.0f }
     };
-
+    
     anim_config->frames[3] = (Animation_Frame)
     {
       (v2f){ 80.0f, 32.0f },
@@ -821,6 +840,9 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       (v2f){ 12.0f, 11.0f }
     };
   }
+  
+  // test entity
+  make_enemy_skull(game, (v3f) { 512, 0, 0 });
 }
 
 typedef struct
@@ -858,6 +880,8 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
+  // the player is always at 0th idx
+  Entity *player = game->entities;
   for (u64 entity_idx = 0;
        entity_idx < game->entity_count;
        ++entity_idx)
@@ -933,14 +957,12 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
              attack_idx < entity->attack_count;
              ++attack_idx)
         {
-          
           Attack *attack = entity->attacks + attack_idx;
           if (attack->current_secs >= attack->interval_secs)
           {
             Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
             Animation_Frame frame = tick_result.frame;
-           
-            // v3f_add(entity->p, (v3f){ entity->last_face_dir ? 64.0f : -64.0f, 0.0f, 0.0f })
+            
             f32 offset_x = frame.offset.x*3;
             f32 offset_y = -frame.offset.y*3;
             if (!entity->last_face_dir)
@@ -952,10 +974,44 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             {
               offset_x += 16.0f;
             }
-
+            
             v3f p = v3f_add(entity->p, (v3f) { offset_x, offset_y, 0 });
-            game_add_tex_clipped(&game->quads,
-                                 p, (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0},
+            v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
+            
+            for (u64 entity_to_collide_idx = 1;
+                 entity_to_collide_idx< game->entity_count;
+                 ++entity_to_collide_idx)
+            {
+              Entity *possible_collision = game->entities + entity_to_collide_idx;
+              if (!!(possible_collision->flags & EntityFlag_Hostile))
+              {
+                f32 c_dist_x = absolute_value_f32(p.x - possible_collision->p.x);
+                f32 c_dist_y = absolute_value_f32(p.y - possible_collision->p.y);
+                f32 c_dist_z = absolute_value_f32(p.z - possible_collision->p.z);
+                
+                f32 r_add_x = dims.x + possible_collision->half_dims.x;
+                f32 r_add_y = dims.y + possible_collision->half_dims.y;
+                f32 r_add_z = dims.z + possible_collision->half_dims.z;
+                
+                b32 x_test = c_dist_x <= r_add_x;
+                b32 y_test = c_dist_y <= r_add_y;
+                b32 z_test = c_dist_z <= r_add_z;
+                z_test;
+                
+                // TODO(cj): for now, this is delete entity of collided by attack.
+                // Add a notion of HP!
+                if (x_test && y_test)
+                {
+                  --game->entity_count;
+                  if (entity_to_collide_idx != game->entity_count)
+                  {
+                    game->entities[game->entity_count] = game->entities[entity_to_collide_idx];
+                  }
+                }
+              }
+            }
+            
+            game_add_tex_clipped(&game->quads, p, dims,
                                  frame.clip_p, frame.clip_dims,
                                  (v4f){1,1,1,1},
                                  entity->last_face_dir);
@@ -970,6 +1026,19 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             attack->current_secs += game_update_secs;
           }
         }
+      } break;
+      
+      case EntityType_Skull:
+      {
+        f32 follow_speed = 32.0f;
+        v3f to_player = v3f_sub_and_normalize_or_zero(player->p, entity->p);
+        to_player.x *= follow_speed * game_update_secs;
+        to_player.y *= follow_speed * game_update_secs;
+        v3f_add_eq(&entity->p, to_player);
+        
+        game_add_rect(&game->quads,
+                      entity->p, (v3f){64,64,0},
+                      (v4f){1,0,1,1});
       } break;
       
       InvalidDefaultCase();

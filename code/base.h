@@ -41,6 +41,8 @@ Assert(0);\
 #define MB(v) (1024llu*KB(v))
 #define GB(v) (1024llu*MB(v))
 #define AlignAToB(a,b) ((a)+((b)-1))&(~((b)-1))
+#define MemoryClear(m,sz) memset(m,'\0',sz)
+#define ClearStructP(s) MemoryClear(s,sizeof(*s))
 
 #define M_Arena_DefaultCommit KB(128)
 typedef struct

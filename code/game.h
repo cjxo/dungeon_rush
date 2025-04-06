@@ -61,24 +61,32 @@ typedef struct
 } Attack;
 
 typedef u64 Entity_Flag;
+enum
+{
+  EntityFlag_Hostile = 0x1,
+};
+
 typedef u64 Entity_Type;
 enum
 {
   EntityType_Player,
+  EntityType_Skull,
   EntityType_Count,
 };
 
 typedef struct Entity Entity;
 struct Entity
 {
-  Entity_Flag flags;
   Entity_Type type;
+  Entity_Flag flags;
   b32 last_face_dir;
   
   u32 attack_count;
   Attack attacks[4];
   
+  // TODO(cj): Migrate from AABB to OBB, for oriented objects
   v3f p;
+  v3f half_dims;
 };
 
 typedef struct
@@ -92,5 +100,8 @@ typedef struct
   Animation_Config walk_animation;
   Animation_Config shadow_slash_animation;
 } Game_State;
+
+inline function Entity *make_entity(Game_State *game, Entity_Type type, Entity_Flag flags);
+inline function Entity *make_enemy_skull(Game_State *game, v3f p);
 
 #endif //GAME_H

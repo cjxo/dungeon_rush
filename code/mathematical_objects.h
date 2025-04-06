@@ -3,6 +3,9 @@
 #ifndef MATHEMATICAL_OBJECTS_H
 #define MATHEMATICAL_OBJECTS_H
 
+inline function f32 absolute_value_f32(f32 a);
+inline function b32 close_enough_zero_f32(f32 a, f32 tolerance);
+
 typedef union
 {
   struct
@@ -22,6 +25,8 @@ typedef union
 } v3f;
 
 inline function v3f v3f_add(v3f a, v3f b);
+inline function void v3f_add_eq(v3f *a, v3f b);
+inline function v3f v3f_sub_and_normalize_or_zero(v3f a, v3f b);
 
 typedef union
 {
