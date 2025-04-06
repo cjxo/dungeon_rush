@@ -790,17 +790,36 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     
     anim_config = &(player->attacks[0].animation);
     anim_config->current_secs = 0.0f;
-    anim_config->duration_secs = 0.035f;
+    anim_config->duration_secs = 0.04f;
     anim_config->frame_idx = 0;
-    for (u32 idx = 0; idx < ArrayCount(anim_config->frames); ++idx)
+
+    anim_config->frames[0] = (Animation_Frame)
     {
-      anim_config->frames[idx] = (Animation_Frame)
-      {
-        (v2f){ 16.0f * (f32)(idx), 32.0f },
-        (v2f){ 16.0f, 16.0f },
-      };
-    }
+      (v2f){ 0.0f, 32.0f },
+      (v2f){ 32.0f, 32.0f },
+      (v2f){ -11.0f, -13.0f }
+    };
     
+    anim_config->frames[1] = (Animation_Frame)
+    {
+      (v2f){ 32.0f, 32.0f },
+      (v2f){ 16.0f, 32.0f },
+      (v2f){ -3.0f, -16.0f }
+    };
+
+    anim_config->frames[2] = (Animation_Frame)
+    {
+      (v2f){ 48.0f, 32.0f },
+      (v2f){ 32.0f, 32.0f },
+      (v2f){ 14.0f, 8.0f }
+    };
+
+    anim_config->frames[3] = (Animation_Frame)
+    {
+      (v2f){ 80.0f, 32.0f },
+      (v2f){ 32.0f, 32.0f },
+      (v2f){ 12.0f, 11.0f }
+    };
   }
 }
 
@@ -919,10 +938,25 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
           if (attack->current_secs >= attack->interval_secs)
           {
             Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
-            
+            Animation_Frame frame = tick_result.frame;
+           
+            // v3f_add(entity->p, (v3f){ entity->last_face_dir ? 64.0f : -64.0f, 0.0f, 0.0f })
+            f32 offset_x = frame.offset.x*3;
+            f32 offset_y = -frame.offset.y*3;
+            if (!entity->last_face_dir)
+            {
+              offset_x *= -1.0f;
+              offset_x -= 16.0f;
+            }
+            else
+            {
+              offset_x += 16.0f;
+            }
+
+            v3f p = v3f_add(entity->p, (v3f) { offset_x, offset_y, 0 });
             game_add_tex_clipped(&game->quads,
-                                 v3f_add(entity->p, (v3f){ entity->last_face_dir ? 32.0f : -32.0f, 0.0f, 0.0f }), (v3f){64,64,0},
-                                 tick_result.frame.clip_p, tick_result.frame.clip_dims,
+                                 p, (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0},
+                                 frame.clip_p, frame.clip_dims,
                                  (v4f){1,1,1,1},
                                  entity->last_face_dir);
             

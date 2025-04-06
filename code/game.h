@@ -33,6 +33,7 @@ typedef struct
 {
   v2f clip_p;
   v2f clip_dims;
+  v2f offset; // in texel space
 } Animation_Frame;
 
 typedef struct
