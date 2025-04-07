@@ -762,13 +762,26 @@ make_entity(Game_State *game, Entity_Type type, Entity_Flag flags)
 }
 
 inline function Entity *
-make_enemy_skull(Game_State *game, v3f p)
+make_enemy_green_skull(Game_State *game, v3f p)
 {
-  Entity *result = make_entity(game, EntityType_Skull, EntityFlag_Hostile);
+  Entity *result = make_entity(game, EntityType_GreenSkull, EntityFlag_Hostile);
   result->p = p;
-  result->half_dims = (v3f){ 32, 32, 0 };
+  result->half_dims = (v3f){ 64, 64, 0 };
   result->max_hp = 12.0f;
   result->current_hp = result->max_hp;
+  
+  Animation_Config *anim = &result->animation;
+  anim->current_secs = 0.0f;
+  anim->duration_secs = 0.1f;
+  anim->frame_idx = 0;
+  for (u32 idx = 0; idx < 4; ++idx)
+  {
+    anim->frames[idx] = (Animation_Frame)
+    {
+      (v2f){ 64.0f + 16*((f32)idx), 0.0f },
+      (v2f){ 16.0f, 16.0f }
+    };
+  }
   return(result);
 }
 
@@ -865,13 +878,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
 #endif
 }
 
-typedef struct
-{
-  Animation_Frame frame;
-  b32 is_full_cycle;
-  b32 just_switched; // newly switched to a new frame
-} Animation_Tick_Result;
-
 function Animation_Tick_Result
 tick_animation(Animation_Config *anim, f32 seconds_elapsed)
 {
@@ -906,7 +912,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
   {
     game->skull_enemy_spawn_timer_sec = 0.0f;
     // test entity
-    make_enemy_skull(game, (v3f) { 512, 0, 0 });
+    make_enemy_green_skull(game, (v3f) { 512, 0, 0 });
   }
   else
   {
@@ -1068,14 +1074,16 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         }
       } break;
       
-      case EntityType_Skull:
+      case EntityType_GreenSkull:
       {
+        // NOTE(cj): Update movement
         f32 follow_speed = 32.0f;
         v3f to_player = v3f_sub_and_normalize_or_zero(player->p, entity->p);
         to_player.x *= follow_speed * game_update_secs;
         to_player.y *= follow_speed * game_update_secs;
         v3f_add_eq(&entity->p, to_player);
         
+        // NOTE(cj): Render HP 
         // a disadvantage of a center origin rect...
         f32 percent_occupy = (entity->current_hp / entity->max_hp);
         f32 percent_residue = 1.0f - percent_occupy;
@@ -1086,9 +1094,13 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         
         game_add_rect(&game->quads, hp_p, (v3f){ 128.0f, 8.0f, 0.0f }, (v4f){ 1, 0, 0, 1 });
         game_add_rect(&game->quads, hp_p_green, (v3f){ 128.0f*percent_occupy, 8.0f, 0.0f }, (v4f){ 0, 1, 0, 1 });
-        game_add_rect(&game->quads,
-                      entity->p, entity->half_dims,
-                      (v4f){1,0,1,1});
+        
+        Animation_Tick_Result tick_result = tick_animation(&entity->animation, game_update_secs);
+        Animation_Frame frame = tick_result.frame;
+        game_add_tex_clipped(&game->quads, entity->p, entity->half_dims,
+                             frame.clip_p, frame.clip_dims,
+                             (v4f){1,1,1,1},
+                             entity->last_face_dir);
       } break;
       
       InvalidDefaultCase();

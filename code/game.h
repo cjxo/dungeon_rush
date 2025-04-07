@@ -44,6 +44,13 @@ typedef struct
   Animation_Frame frames[4];
 } Animation_Config;
 
+typedef struct
+{
+  Animation_Frame frame;
+  b32 is_full_cycle;
+  b32 just_switched; // newly switched to a new frame
+} Animation_Tick_Result;
+
 typedef u32 Attack_Type;
 enum
 {
@@ -70,7 +77,7 @@ typedef u64 Entity_Type;
 enum
 {
   EntityType_Player,
-  EntityType_Skull,
+  EntityType_GreenSkull,
   EntityType_Count,
 };
 
@@ -80,6 +87,8 @@ struct Entity
   Entity_Type type;
   Entity_Flag flags;
   b32 last_face_dir;
+  
+  Animation_Config animation;
   
   u32 attack_count;
   Attack attacks[4];
@@ -110,7 +119,9 @@ typedef struct
 #endif
 } Game_State;
 
+function Animation_Tick_Result tick_animation(Animation_Config *anim, f32 seconds_elapsed);
+
 inline function Entity *make_entity(Game_State *game, Entity_Type type, Entity_Flag flags);
-inline function Entity *make_enemy_skull(Game_State *game, v3f p);
+inline function Entity *make_enemy_green_skull(Game_State *game, v3f p);
 
 #endif //GAME_H
