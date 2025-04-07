@@ -762,6 +762,9 @@ make_enemy_skull(Game_State *game, v3f p)
 {
   Entity *result = make_entity(game, EntityType_Skull, EntityFlag_Hostile);
   result->p = p;
+  result->half_dims = (v3f){ 32, 32, 0 };
+  result->max_hp = 12.0f;
+  result->current_hp = result->max_hp;
   return(result);
 }
 
@@ -846,6 +849,7 @@ typedef struct
 {
   Animation_Frame frame;
   b32 is_full_cycle;
+  b32 just_switched; // newly switched to a new frame
 } Animation_Tick_Result;
 
 function Animation_Tick_Result
@@ -853,16 +857,18 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
 {
   Animation_Tick_Result result;
   result.frame = anim->frames[anim->frame_idx];
-  b32 is_full_cycle = 0;
+  result.is_full_cycle = 0;
+  result.just_switched = 0;
   b32 time_is_up = anim->current_secs >= anim->duration_secs;
   if (time_is_up)
   {
     anim->current_secs = 0.0f;
     anim->frame_idx += 1;
+    result.just_switched = 1;
     if (anim->frame_idx == ArrayCount(anim->frames))
     {
       anim->frame_idx = 0;
-      is_full_cycle = 1;
+      result.is_full_cycle = 1;
     }
   }
   else
@@ -870,14 +876,13 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
     anim->current_secs += seconds_elapsed;
   } 
   
-  result.is_full_cycle = is_full_cycle;
   return(result);
 }
 
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
-  if (game->skull_enemy_spawn_timer_sec > 1.0f)
+  if (game->skull_enemy_spawn_timer_sec > 2.0f)
   {
     game->skull_enemy_spawn_timer_sec = 0.0f;
     // test entity
@@ -986,35 +991,44 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             v3f p = v3f_add(entity->p, (v3f) { offset_x, offset_y, 0 });
             v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
             
-            for (u64 entity_to_collide_idx = 1;
-                 entity_to_collide_idx < game->entity_count;
-                 ++entity_to_collide_idx)
+            // TODO(cj): HARDCODE: we need to remove this hardcoded value soon1
+            b32 just_switched_to_third_frame = (attack->animation.frame_idx == 3) && tick_result.just_switched;
+            if (just_switched_to_third_frame)
             {
-              Entity *possible_collision = game->entities + entity_to_collide_idx;
-              if (!!(possible_collision->flags & EntityFlag_Hostile))
+              for (u64 entity_to_collide_idx = 1;
+                   entity_to_collide_idx < game->entity_count;
+                   ++entity_to_collide_idx)
               {
-                f32 c_dist_x = absolute_value_f32(p.x - possible_collision->p.x);
-                f32 c_dist_y = absolute_value_f32(p.y - possible_collision->p.y);
-                f32 c_dist_z = absolute_value_f32(p.z - possible_collision->p.z);
-                
-                f32 r_add_x = dims.x + possible_collision->half_dims.x;
-                f32 r_add_y = dims.y + possible_collision->half_dims.y;
-                f32 r_add_z = dims.z + possible_collision->half_dims.z;
-                
-                b32 x_test = c_dist_x <= r_add_x;
-                b32 y_test = c_dist_y <= r_add_y;
-                b32 z_test = c_dist_z <= r_add_z;
-                z_test;
-                
-                // TODO(cj): for now, this is delete entity of collided by attack.
-                // Add a notion of HP!
-                if (x_test && y_test)
+                Entity *possible_collision = game->entities + entity_to_collide_idx;
+                if (!!(possible_collision->flags & EntityFlag_Hostile))
                 {
-                  if (entity_to_collide_idx != game->entity_count)
+                  f32 c_dist_x = absolute_value_f32(p.x - possible_collision->p.x);
+                  f32 c_dist_y = absolute_value_f32(p.y - possible_collision->p.y);
+                  f32 c_dist_z = absolute_value_f32(p.z - possible_collision->p.z);
+                  
+                  f32 r_add_x = 0.5f*dims.x + possible_collision->half_dims.x;
+                  f32 r_add_y = 0.5f*dims.y + possible_collision->half_dims.y;
+                  f32 r_add_z = 0.5f*dims.z + possible_collision->half_dims.z;
+                  
+                  b32 x_test = c_dist_x <= r_add_x;
+                  b32 y_test = c_dist_y <= r_add_y;
+                  b32 z_test = c_dist_z <= r_add_z;
+                  z_test;
+                  
+                  // TODO(cj): for now, this is delete entity of collided by attack.
+                  // Add a notion of HP!
+                  if (x_test && y_test)
                   {
-                    game->entities[entity_to_collide_idx] = game->entities[game->entity_count - 1];
+                    possible_collision->current_hp -= attack->damage;
+                    if (possible_collision->current_hp <= 0.0f)
+                    {
+                      if (entity_to_collide_idx != game->entity_count)
+                      {
+                        game->entities[entity_to_collide_idx] = game->entities[game->entity_count - 1];
+                      }
+                      --game->entity_count;
+                    }
                   }
-                  --game->entity_count;
                 }
               }
             }
@@ -1044,8 +1058,18 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         to_player.y *= follow_speed * game_update_secs;
         v3f_add_eq(&entity->p, to_player);
         
+        // a disadvantage of a center origin rect...
+        f32 percent_occupy = (entity->current_hp / entity->max_hp);
+        f32 percent_residue = 1.0f - percent_occupy;
+        v3f hp_p = entity->p;
+        hp_p.y += 48.0f;
+        v3f hp_p_green = hp_p;
+        hp_p_green.x -= percent_residue * 128.0f * 0.5f;
+        
+        game_add_rect(&game->quads, hp_p, (v3f){ 128.0f, 8.0f, 0.0f }, (v4f){ 1, 0, 0, 1 });
+        game_add_rect(&game->quads, hp_p_green, (v3f){ 128.0f*percent_occupy, 8.0f, 0.0f }, (v4f){ 0, 1, 0, 1 });
         game_add_rect(&game->quads,
-                      entity->p, (v3f){64,64,0},
+                      entity->p, entity->half_dims,
                       (v4f){1,0,1,1});
       } break;
       

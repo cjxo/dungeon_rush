@@ -29,6 +29,16 @@ v3f_add(v3f a, v3f b)
   return(result);
 }
 
+inline function v3f
+v3f_sub(v3f a, v3f b)
+{
+  v3f result;
+  result.x = a.x - b.x;
+  result.y = a.y - b.y;
+  result.z = a.z - b.z;
+  return(result);
+}
+
 inline function void
 v3f_add_eq(v3f *a, v3f b)
 {

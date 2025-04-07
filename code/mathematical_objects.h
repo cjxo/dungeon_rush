@@ -25,6 +25,7 @@ typedef union
 } v3f;
 
 inline function v3f v3f_add(v3f a, v3f b);
+inline function v3f v3f_sub(v3f a, v3f b);
 inline function void v3f_add_eq(v3f *a, v3f b);
 inline function v3f v3f_sub_and_normalize_or_zero(v3f a, v3f b);
 

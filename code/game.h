@@ -57,7 +57,7 @@ typedef struct
   Animation_Config animation;
   f32 current_secs;
   f32 interval_secs;
-  s32 damage;
+  f32 damage;
 } Attack;
 
 typedef u64 Entity_Flag;
@@ -87,6 +87,10 @@ struct Entity
   // TODO(cj): Migrate from AABB to OBB, for oriented objects
   v3f p;
   v3f half_dims;
+  
+  // NOTE(cj): although real, I prefer nonnegative integer
+  f32 max_hp;
+  f32 current_hp;
 };
 
 typedef struct
