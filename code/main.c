@@ -124,6 +124,7 @@ typedef struct
   ID3D11ShaderResourceView *game_diffuse_sheet_view;
   
   ID3D11RasterizerState *rasterizer_fill_no_cull_ccw;
+  ID3D11RasterizerState *rasterizer_wire_no_cull_ccw;
   
   ID3D11SamplerState *sampler_point_all;
   
@@ -435,6 +436,9 @@ dx11_create_rasterizer_states(Application_State *app)
   raster_desc.AntialiasedLineEnable = FALSE;
   
   ID3D11Device_CreateRasterizerState(app->device, &raster_desc, &app->rasterizer_fill_no_cull_ccw);
+  
+  raster_desc.FillMode = D3D11_FILL_WIREFRAME;
+  ID3D11Device_CreateRasterizerState(app->device, &raster_desc, &app->rasterizer_wire_no_cull_ccw);
 }
 
 function void
@@ -801,6 +805,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       };
     }
     
+    player->half_dims = (v3f){ 64, 64, 0 };
     player->attack_count = 1;
     player->attacks[0] = (Attack)
     {
@@ -843,6 +848,21 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       (v2f){ 12.0f, 11.0f }
     };
   }
+  
+  //
+  // NOTE(cj): init debug stuff
+  //
+#if defined(DR_DEBUG)
+  game->dbg_wire_quads = (Game_QuadArray)
+  {
+    .quads = M_Arena_PushArray(game->arena, Game_Quad, Game_MaxQuads),
+    .capacity = Game_MaxQuads,
+    .count = 0,
+    .tex_width = tex_width,
+    .tex_height = tex_height,
+  };
+  
+#endif
 }
 
 typedef struct
@@ -948,7 +968,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         {
           Animation_Frame walk_frame = tick_animation(&game->walk_animation, game_update_secs).frame;
           game_add_tex_clipped(&game->quads,
-                               entity->p, (v3f){64,64,0},
+                               entity->p, entity->half_dims,
                                walk_frame.clip_p, walk_frame.clip_dims,
                                (v4f){1,1,1,1},
                                entity->last_face_dir);
@@ -956,7 +976,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         else
         {
           game_add_tex_clipped(&game->quads,
-                               entity->p, (v3f){64,64,0},
+                               entity->p, entity->half_dims,
                                (v2f){0,0}, (v2f){16,16},
                                (v4f){1,1,1,1},
                                entity->last_face_dir);
@@ -1015,8 +1035,6 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                   b32 z_test = c_dist_z <= r_add_z;
                   z_test;
                   
-                  // TODO(cj): for now, this is delete entity of collided by attack.
-                  // Add a notion of HP!
                   if (x_test && y_test)
                   {
                     possible_collision->current_hp -= attack->damage;
@@ -1186,6 +1204,23 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         
         game_update_and_render(&game, input, seconds_per_frame);
         
+#if defined(DR_DEBUG)
+        if (OS_KeyReleased(input, OS_Input_KeyType_P))
+        {
+          game.dbg_draw_entity_wires = !game.dbg_draw_entity_wires;
+        }
+        if (game.dbg_draw_entity_wires)
+        {
+          for (u64 entity_idx = 0;
+               entity_idx < game.entity_count;
+               ++entity_idx)
+          {
+            Entity *entity = game.entities + entity_idx;
+            game_add_rect(&game.dbg_wire_quads, entity->p, entity->half_dims, (v4f){ 0, 0, 1, 1 });
+          }
+        }
+#endif
+        
         D3D11_VIEWPORT viewport =
         {
           .Width = (f32)g_application.reso_width,
@@ -1241,16 +1276,30 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         Game_QuadArray game_quads = game.quads;
         if (game_quads.count)
         {
+          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
+          
           ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
           CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
+        game.quads.count = 0;
+        
+#if defined(DR_DEBUG)
+        game_quads = game.dbg_wire_quads;
+        if (game_quads.count)
+        {
+          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_wire_no_cull_ccw);
+          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+          CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
+          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
+          ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+        }
+        game.dbg_wire_quads.count = 0;
+#endif
         
         ID3D11DeviceContext_ClearState(g_application.device_context);
         IDXGISwapChain1_Present(g_application.swap_chain, 1, 0);
-        
-        game.quads.count = 0;
         
         LARGE_INTEGER perf_counter_end;
         QueryPerformanceCounter(&perf_counter_end);

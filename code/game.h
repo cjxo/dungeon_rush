@@ -103,6 +103,11 @@ typedef struct
   
   f32 skull_enemy_spawn_timer_sec;
   Animation_Config walk_animation;
+  
+#if defined(DR_DEBUG)
+  b32 dbg_draw_entity_wires;
+  Game_QuadArray dbg_wire_quads;
+#endif
 } Game_State;
 
 inline function Entity *make_entity(Game_State *game, Entity_Type type, Entity_Flag flags);
