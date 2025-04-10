@@ -1041,14 +1041,15 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                   b32 z_test = c_dist_z <= r_add_z;
                   z_test;
                   
-                  if (x_test && y_test)
+                  b32 attack_collided_with_entity = x_test && y_test;
+                  if (attack_collided_with_entity)
                   {
                     possible_collision->current_hp -= attack->damage;
                     if (possible_collision->current_hp <= 0.0f)
                     {
-                      if (entity_to_collide_idx != game->entity_count)
+                      if (entity_to_collide_idx != (game->entity_count - 1))
                       {
-                        game->entities[entity_to_collide_idx] = game->entities[game->entity_count - 1];
+                        game->entities[entity_to_collide_idx--] = game->entities[game->entity_count - 1];
                       }
                       --game->entity_count;
                     }
