@@ -766,11 +766,11 @@ make_enemy_green_skull(Game_State *game, v3f p)
 {
   Entity *result = make_entity(game, EntityType_GreenSkull, EntityFlag_Hostile);
   result->p = p;
-  result->half_dims = (v3f){ 64, 64, 0 };
+  result->dims = (v3f){ 64, 64, 0 };
   result->max_hp = 12.0f;
   result->current_hp = result->max_hp;
   
-  Animation_Config *anim = &result->animation;
+  Animation_Config *anim = &result->enemy.animation;
   anim->current_secs = 0.0f;
   anim->duration_secs = 0.1f;
   anim->frame_idx = 0;
@@ -782,6 +782,45 @@ make_enemy_green_skull(Game_State *game, v3f p)
       (v2f){ 16.0f, 16.0f }
     };
   }
+  
+  result->dims = (v3f){ 64, 64, 0 };
+  result->enemy.attack = (Attack)
+  {
+    .type = AttackType_Bite,
+    .current_secs = 1.0f,
+    .interval_secs = 1.0f,
+    .damage = 4,
+  };
+  
+  Animation_Config *anim_config = &(result->enemy.attack.animation);
+  anim_config->current_secs = 0.0f;
+  anim_config->duration_secs = 0.04f;
+  anim_config->frame_idx = 0;
+  
+  anim_config->frames[0] = (Animation_Frame)
+  {
+    (v2f){ 0.0f, 64.0f },
+    (v2f){ 64.0f, 48.0f },
+  };
+  
+  anim_config->frames[1] = (Animation_Frame)
+  {
+    (v2f){ 64.0f, 64.0f },
+    (v2f){ 64.0f, 48.0f },
+  };
+  
+  anim_config->frames[2] = (Animation_Frame)
+  {
+    (v2f){ 128.0f, 64.0f },
+    (v2f){ 64.0f, 48.0f },
+  };
+  
+  anim_config->frames[3] = (Animation_Frame)
+  {
+    (v2f){ 192.0f, 64.0f },
+    (v2f){ 64.0f, 48.0f },
+  };
+  
   return(result);
 }
 
@@ -804,8 +843,10 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     player->flags = 0;
     player->type = EntityType_Player;
     player->last_face_dir = 0;
+    // NOTE(cj): the player's base HP is 50
+    player->max_hp = player->current_hp = 50.0f;
     
-    Animation_Config *anim_config = &(game->walk_animation);
+    Animation_Config *anim_config = &(player->player.walk_animation);
     anim_config->current_secs = 0.0f;
     anim_config->duration_secs = 0.15f;
     anim_config->frame_idx = 0;
@@ -818,9 +859,9 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       };
     }
     
-    player->half_dims = (v3f){ 64, 64, 0 };
-    player->attack_count = 1;
-    player->attacks[0] = (Attack)
+    player->dims = (v3f){ 64, 64, 0 };
+    player->player.attack_count = 1;
+    player->player.attacks[0] = (Attack)
     {
       .type = AttackType_ShadowSlash,
       .current_secs = 1.0f,
@@ -828,7 +869,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       .damage = 6,
     };
     
-    anim_config = &(player->attacks[0].animation);
+    anim_config = &(player->player.attacks[0].animation);
     anim_config->current_secs = 0.0f;
     anim_config->duration_secs = 0.04f;
     anim_config->frame_idx = 0;
@@ -905,6 +946,44 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
   return(result);
 }
 
+function b32
+check_aabb_collision_xy(v2f center_a, v2f half_dims_a,
+                        v2f center_b, v2f half_dims_b)
+{
+  f32 c_dist, r_add;
+  
+  c_dist = absolute_value_f32(center_a.x - center_b.x);
+  r_add = half_dims_a.x + half_dims_b.x;
+  if (c_dist > r_add)
+  {
+    return 0;
+  }
+  
+  c_dist = absolute_value_f32(center_a.y - center_b.y);
+  r_add = half_dims_a.y + half_dims_b.y;
+  if (c_dist > r_add)
+  {
+    return 0;
+  }
+  
+  return 1;
+}
+
+function void
+draw_health_bar(Game_QuadArray *quads, Entity *entity)
+{
+  // a disadvantage of a center origin rect...
+  f32 percent_occupy = (entity->current_hp / entity->max_hp);
+  f32 percent_residue = 1.0f - percent_occupy;
+  v3f hp_p = entity->p;
+  hp_p.y += 48.0f;
+  v3f hp_p_green = hp_p;
+  hp_p_green.x -= percent_residue * 128.0f * 0.5f;
+  
+  game_add_rect(quads, hp_p, (v3f){ 128.0f, 8.0f, 0.0f }, (v4f){ 1, 0, 0, 1 });
+  game_add_rect(quads, hp_p_green, (v3f){ 128.0f*percent_occupy, 8.0f, 0.0f }, (v4f){ 0, 1, 0, 1 });
+}
+
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
@@ -967,14 +1046,20 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         entity->p.x += desired_move_x;
         entity->p.y += desired_move_y;
         
+        
         //
-        // NOTE(cj): Drawing/Animation update
+        // NOTE(cj): Render HP 
+        //
+        draw_health_bar(&game->quads, entity);
+        
+        //
+        // NOTE(cj): Drawing/Animation update of player
         //
         if (desired_move_x || desired_move_y)
         {
-          Animation_Frame walk_frame = tick_animation(&game->walk_animation, game_update_secs).frame;
+          Animation_Frame walk_frame = tick_animation(&entity->player.walk_animation, game_update_secs).frame;
           game_add_tex_clipped(&game->quads,
-                               entity->p, entity->half_dims,
+                               entity->p, entity->dims,
                                walk_frame.clip_p, walk_frame.clip_dims,
                                (v4f){1,1,1,1},
                                entity->last_face_dir);
@@ -982,21 +1067,24 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         else
         {
           game_add_tex_clipped(&game->quads,
-                               entity->p, entity->half_dims,
+                               entity->p, entity->dims,
                                (v2f){0,0}, (v2f){16,16},
                                (v4f){1,1,1,1},
                                entity->last_face_dir);
         }
         
+        //
         // TODO(cj): Should Attacks be generated entities?
+        //
+        
         //
         // NOTE(cj): Update Attacks
         //
         for (u64 attack_idx = 0;
-             attack_idx < entity->attack_count;
+             attack_idx < entity->player.attack_count;
              ++attack_idx)
         {
-          Attack *attack = entity->attacks + attack_idx;
+          Attack *attack = entity->player.attacks + attack_idx;
           if (attack->current_secs >= attack->interval_secs)
           {
             Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
@@ -1016,11 +1104,16 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             
             v3f p = v3f_add(entity->p, (v3f) { offset_x, offset_y, 0 });
             v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
-            
+            v2f half_dims = { dims.x*0.5f, dims.y*0.5f };
+            // 
             // TODO(cj): HARDCODE: we need to remove this hardcoded value soon1
+            //
             b32 just_switched_to_third_frame = (attack->animation.frame_idx == 3) && tick_result.just_switched;
             if (just_switched_to_third_frame)
             {
+              //
+              // NOTE(cj): Find hostile enemies to damage
+              //
               for (u64 entity_to_collide_idx = 1;
                    entity_to_collide_idx < game->entity_count;
                    ++entity_to_collide_idx)
@@ -1028,20 +1121,14 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                 Entity *possible_collision = game->entities + entity_to_collide_idx;
                 if (!!(possible_collision->flags & EntityFlag_Hostile))
                 {
-                  f32 c_dist_x = absolute_value_f32(p.x - possible_collision->p.x);
-                  f32 c_dist_y = absolute_value_f32(p.y - possible_collision->p.y);
-                  f32 c_dist_z = absolute_value_f32(p.z - possible_collision->p.z);
+                  b32 attack_collided_with_entity = check_aabb_collision_xy(p.xy, half_dims,
+                                                                            possible_collision->p.xy,
+                                                                            (v2f)
+                                                                            {
+                                                                              possible_collision->dims.x*0.5f,
+                                                                              possible_collision->dims.y*0.5f,
+                                                                            });
                   
-                  f32 r_add_x = 0.5f*dims.x + possible_collision->half_dims.x;
-                  f32 r_add_y = 0.5f*dims.y + possible_collision->half_dims.y;
-                  f32 r_add_z = 0.5f*dims.z + possible_collision->half_dims.z;
-                  
-                  b32 x_test = c_dist_x <= r_add_x;
-                  b32 y_test = c_dist_y <= r_add_y;
-                  b32 z_test = c_dist_z <= r_add_z;
-                  z_test;
-                  
-                  b32 attack_collided_with_entity = x_test && y_test;
                   if (attack_collided_with_entity)
                   {
                     possible_collision->current_hp -= attack->damage;
@@ -1073,35 +1160,91 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             attack->current_secs += game_update_secs;
           }
         }
+        
       } break;
       
       case EntityType_GreenSkull:
       {
+        //
         // NOTE(cj): Update movement
+        //
         f32 follow_speed = 32.0f;
         v3f to_player = v3f_sub_and_normalize_or_zero(player->p, entity->p);
         to_player.x *= follow_speed * game_update_secs;
         to_player.y *= follow_speed * game_update_secs;
         v3f_add_eq(&entity->p, to_player);
         
+        //
         // NOTE(cj): Render HP 
-        // a disadvantage of a center origin rect...
-        f32 percent_occupy = (entity->current_hp / entity->max_hp);
-        f32 percent_residue = 1.0f - percent_occupy;
-        v3f hp_p = entity->p;
-        hp_p.y += 48.0f;
-        v3f hp_p_green = hp_p;
-        hp_p_green.x -= percent_residue * 128.0f * 0.5f;
+        //
+        draw_health_bar(&game->quads, entity);
         
-        game_add_rect(&game->quads, hp_p, (v3f){ 128.0f, 8.0f, 0.0f }, (v4f){ 1, 0, 0, 1 });
-        game_add_rect(&game->quads, hp_p_green, (v3f){ 128.0f*percent_occupy, 8.0f, 0.0f }, (v4f){ 0, 1, 0, 1 });
-        
-        Animation_Tick_Result tick_result = tick_animation(&entity->animation, game_update_secs);
-        Animation_Frame frame = tick_result.frame;
-        game_add_tex_clipped(&game->quads, entity->p, entity->half_dims,
-                             frame.clip_p, frame.clip_dims,
+        //
+        // NOTE(cj): Render the green skull enemy
+        //
+        Animation_Tick_Result skull_tick_result = tick_animation(&entity->enemy.animation, game_update_secs);
+        Animation_Frame skull_frame = skull_tick_result.frame;
+        game_add_tex_clipped(&game->quads, entity->p, entity->dims,
+                             skull_frame.clip_p, skull_frame.clip_dims,
                              (v4f){1,1,1,1},
                              entity->last_face_dir);
+        
+        //
+        // NOTE(cj): Damage the player
+        // 
+        b32 i_collided_with_player = check_aabb_collision_xy(entity->p.xy, (v2f){ entity->dims.x*0.5f, entity->dims.y*0.5f },
+                                                             player->p.xy,
+                                                             (v2f)
+                                                             {
+                                                               player->dims.x*0.5f,
+                                                               player->dims.y*0.5f,
+                                                             });
+        
+        if (i_collided_with_player)
+        {
+          Attack *attack = &entity->enemy.attack;
+          if (attack->current_secs >= attack->interval_secs)
+          {
+            Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
+            Animation_Frame frame = tick_result.frame;
+            v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
+            
+            // 
+            // TODO(cj): HARDCODE: we need to remove this hardcoded value soon1
+            //
+            b32 just_switched_to_third_frame = (attack->animation.frame_idx == 3) && tick_result.just_switched;
+            if (just_switched_to_third_frame)
+            {
+              //
+              // NOTE(cj): Attack Player
+              //
+              player->current_hp -= attack->damage;
+              if (player->current_hp <= 0.0f)
+              {
+                // TODO(cj): Game Over
+                HeyDeveloperPleaseImplementMeSoon();
+              }
+            }
+            
+            //
+            // NOTE(cj): Draw the bite animation ON player
+            // (the player must be drawn first...!)
+            //
+            game_add_tex_clipped(&game->quads, player->p, dims,
+                                 frame.clip_p, frame.clip_dims,
+                                 (v4f){1,1,1,1},
+                                 0);
+            
+            if (tick_result.is_full_cycle)
+            {
+              attack->current_secs = 0.0f;
+            }
+          }
+          else
+          {
+            attack->current_secs += game_update_secs;
+          }
+        }
       } break;
       
       InvalidDefaultCase();
@@ -1229,7 +1372,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                ++entity_idx)
           {
             Entity *entity = game.entities + entity_idx;
-            game_add_rect(&game.dbg_wire_quads, entity->p, entity->half_dims, (v4f){ 0, 0, 1, 1 });
+            game_add_rect(&game.dbg_wire_quads, entity->p, entity->dims, (v4f){ 0, 0, 1, 1 });
           }
         }
 #endif

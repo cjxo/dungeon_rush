@@ -33,6 +33,8 @@ default: \
 Assert(0);\
 } break
 
+#define HeyDeveloperPleaseImplementMeSoon() Assert(0)
+
 #define ArrayCount(a) (sizeof(a)/sizeof((a)[0]))
 #define Min(a,b) (((a)<(b))?(a):(b))
 #define Max(a,b) (((a)>(b))?(a):(b))

@@ -55,6 +55,8 @@ typedef u32 Attack_Type;
 enum
 {
   AttackType_ShadowSlash,
+  
+  AttackType_Bite,
   AttackType_Count,
 };
 
@@ -81,6 +83,19 @@ enum
   EntityType_Count,
 };
 
+typedef struct
+{
+  Animation_Config walk_animation;
+  u32 attack_count;
+  Attack attacks[4];
+} Player;
+
+typedef struct
+{
+  Animation_Config animation;
+  Attack attack;
+} Enemy;
+
 typedef struct Entity Entity;
 struct Entity
 {
@@ -88,18 +103,20 @@ struct Entity
   Entity_Flag flags;
   b32 last_face_dir;
   
-  Animation_Config animation;
-  
-  u32 attack_count;
-  Attack attacks[4];
-  
   // TODO(cj): Migrate from AABB to OBB, for oriented objects
   v3f p;
-  v3f half_dims;
+  v3f dims;
   
+  // NOTE(cj): ATTRIBUTES area
   // NOTE(cj): although real, I prefer nonnegative integer
   f32 max_hp;
   f32 current_hp;
+  
+  union
+  {
+    Player player;
+    Enemy enemy;
+  };
 };
 
 typedef struct
@@ -111,7 +128,6 @@ typedef struct
   Entity entities[512];
   
   f32 skull_enemy_spawn_timer_sec;
-  Animation_Config walk_animation;
   
 #if defined(DR_DEBUG)
   b32 dbg_draw_entity_wires;

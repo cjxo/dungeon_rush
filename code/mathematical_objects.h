@@ -21,6 +21,11 @@ typedef union
   {
     f32 x, y, z;
   };
+  struct
+  {
+    v2f xy;
+    f32 __unused_a;
+  };
   f32 v[3];
 } v3f;
 
