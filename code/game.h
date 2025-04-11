@@ -41,7 +41,6 @@ typedef struct
   f32 current_secs;
   f32 duration_secs;
   u32 frame_idx;
-  Animation_Frame frames[4];
 } Animation_Config;
 
 typedef struct
@@ -50,6 +49,29 @@ typedef struct
   b32 is_full_cycle;
   b32 just_switched; // newly switched to a new frame
 } Animation_Tick_Result;
+
+typedef struct
+{
+  Animation_Frame *frames;
+  u64 count;
+} Animation_Frames;
+
+typedef u32 AnimationFrame_For;
+enum
+{
+  // ents
+  AnimationFrames_PlayerWalk,
+  AnimationFrames_GreenSkullWalk,
+  
+  // attacks
+  AnimationFrames_ShadowSlash,
+  AnimationFrames_Bite,
+  
+  AnimationFrames_Count,
+};
+
+function Animation_Tick_Result tick_animation(Animation_Config *anim, Animation_Frames frame_info, f32 seconds_elapsed);
+function Animation_Frames get_animation_frames(AnimationFrame_For frame_for);
 
 typedef u32 Attack_Type;
 enum
@@ -134,8 +156,6 @@ typedef struct
   Game_QuadArray dbg_wire_quads;
 #endif
 } Game_State;
-
-function Animation_Tick_Result tick_animation(Animation_Config *anim, f32 seconds_elapsed);
 
 inline function Entity *make_entity(Game_State *game, Entity_Type type, Entity_Flag flags);
 inline function Entity *make_enemy_green_skull(Game_State *game, v3f p);

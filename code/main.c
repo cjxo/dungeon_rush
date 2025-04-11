@@ -774,20 +774,12 @@ make_enemy_green_skull(Game_State *game, v3f p)
   anim->current_secs = 0.0f;
   anim->duration_secs = 0.1f;
   anim->frame_idx = 0;
-  for (u32 idx = 0; idx < 4; ++idx)
-  {
-    anim->frames[idx] = (Animation_Frame)
-    {
-      (v2f){ 64.0f + 16*((f32)idx), 0.0f },
-      (v2f){ 16.0f, 16.0f }
-    };
-  }
   
   result->dims = (v3f){ 64, 64, 0 };
   result->enemy.attack = (Attack)
   {
     .type = AttackType_Bite,
-    .current_secs = 1.0f,
+    .current_secs = 0.0f,
     .interval_secs = 1.0f,
     .damage = 4,
   };
@@ -797,30 +789,58 @@ make_enemy_green_skull(Game_State *game, v3f p)
   anim_config->duration_secs = 0.04f;
   anim_config->frame_idx = 0;
   
-  anim_config->frames[0] = (Animation_Frame)
+  return(result);
+}
+
+function Animation_Frames
+get_animation_frames(AnimationFrame_For frame_for)
+{
+  Assert(frame_for < AnimationFrames_Count);
+  
+  Animation_Frames result={0};
+  
+  static Animation_Frame player_walk[] =
   {
-    (v2f){ 0.0f, 64.0f },
-    (v2f){ 64.0f, 48.0f },
+    {{0.0f,16.0f},{16.0f,16.0f},},
+    {{16.0f,16.0f},{16.0f,16.0f},},
+    {{32.0f,16.0f},{16.0f,16.0f},},
+    {{48.0f,16.0f},{16.0f,16.0f},},
   };
   
-  anim_config->frames[1] = (Animation_Frame)
+  static Animation_Frame green_skull_walk[] =
   {
-    (v2f){ 64.0f, 64.0f },
-    (v2f){ 64.0f, 48.0f },
+    {{64.0f,0.0f},{16.0f,16.0f}},
+    {{80.0f,0.0f},{16.0f,16.0f}},
+    {{96.0f,0.0f},{16.0f,16.0f}},
+    {{112.0f,0.0f},{16.0f,16.0f}},
   };
   
-  anim_config->frames[2] = (Animation_Frame)
+  // 
+  static Animation_Frame shadow_slash_attack[] =
   {
-    (v2f){ 128.0f, 64.0f },
-    (v2f){ 64.0f, 48.0f },
+    {{0.0f,32.0f},{32.0f,32.0f},{-11.0f,-13.0f},},
+    {{32.0f,32.0f},{16.0f,32.0f},{-3.0f,-16.0f},},
+    {{48.0f,32.0f},{32.0f,32.0f},{14.0f,8.0f},},
+    {{80.0f,32.0f},{32.0f,32.0f},{12.0f,11.0f},},
   };
   
-  anim_config->frames[3] = (Animation_Frame)
+  static Animation_Frame bite_attack[] =
   {
-    (v2f){ 192.0f, 64.0f },
-    (v2f){ 64.0f, 48.0f },
+    {{0.0f,64.0f},{64.0f,48.0f},},
+    {{64.0f,64.0f},{64.0f,48.0f},},
+    {{128.0f,64.0f},{64.0f,48.0f},},
+    {{192.0f, 64.0f},{64.0f,48.0f},},
   };
   
+  static Animation_Frames table[] =
+  {
+    [AnimationFrames_PlayerWalk] = { player_walk, ArrayCount(player_walk) },
+    [AnimationFrames_GreenSkullWalk] = { green_skull_walk, ArrayCount(green_skull_walk) },
+    [AnimationFrames_ShadowSlash] = { shadow_slash_attack, ArrayCount(shadow_slash_attack) },
+    [AnimationFrames_Bite] = { bite_attack, ArrayCount(bite_attack) },
+  };
+  
+  result = table[frame_for];
   return(result);
 }
 
@@ -850,14 +870,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     anim_config->current_secs = 0.0f;
     anim_config->duration_secs = 0.15f;
     anim_config->frame_idx = 0;
-    for (u32 idx = 0; idx < ArrayCount(anim_config->frames); ++idx)
-    {
-      anim_config->frames[idx] = (Animation_Frame)
-      {
-        (v2f){ 16.0f * (f32)(idx), 16.0f },
-        (v2f){ 16.0f, 16.0f },
-      };
-    }
     
     player->dims = (v3f){ 64, 64, 0 };
     player->player.attack_count = 1;
@@ -873,34 +885,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     anim_config->current_secs = 0.0f;
     anim_config->duration_secs = 0.04f;
     anim_config->frame_idx = 0;
-    
-    anim_config->frames[0] = (Animation_Frame)
-    {
-      (v2f){ 0.0f, 32.0f },
-      (v2f){ 32.0f, 32.0f },
-      (v2f){ -11.0f, -13.0f }
-    };
-    
-    anim_config->frames[1] = (Animation_Frame)
-    {
-      (v2f){ 32.0f, 32.0f },
-      (v2f){ 16.0f, 32.0f },
-      (v2f){ -3.0f, -16.0f }
-    };
-    
-    anim_config->frames[2] = (Animation_Frame)
-    {
-      (v2f){ 48.0f, 32.0f },
-      (v2f){ 32.0f, 32.0f },
-      (v2f){ 14.0f, 8.0f }
-    };
-    
-    anim_config->frames[3] = (Animation_Frame)
-    {
-      (v2f){ 80.0f, 32.0f },
-      (v2f){ 32.0f, 32.0f },
-      (v2f){ 12.0f, 11.0f }
-    };
   }
   
   //
@@ -920,10 +904,13 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
 }
 
 function Animation_Tick_Result
-tick_animation(Animation_Config *anim, f32 seconds_elapsed)
+tick_animation(Animation_Config *anim, Animation_Frames frame_info, f32 seconds_elapsed)
 {
+  Animation_Frame *frames = frame_info.frames;
+  u64 frame_count = frame_info.count;
+  
   Animation_Tick_Result result;
-  result.frame = anim->frames[anim->frame_idx];
+  result.frame = frames[anim->frame_idx];
   result.is_full_cycle = 0;
   result.just_switched = 0;
   b32 time_is_up = anim->current_secs >= anim->duration_secs;
@@ -932,7 +919,7 @@ tick_animation(Animation_Config *anim, f32 seconds_elapsed)
     anim->current_secs = 0.0f;
     anim->frame_idx += 1;
     result.just_switched = 1;
-    if (anim->frame_idx == ArrayCount(anim->frames))
+    if (anim->frame_idx == frame_count)
     {
       anim->frame_idx = 0;
       result.is_full_cycle = 1;
@@ -1057,7 +1044,9 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         //
         if (desired_move_x || desired_move_y)
         {
-          Animation_Frame walk_frame = tick_animation(&entity->player.walk_animation, game_update_secs).frame;
+          Animation_Frame walk_frame = tick_animation(&entity->player.walk_animation,
+                                                      get_animation_frames(AnimationFrames_PlayerWalk),
+                                                      game_update_secs).frame;
           game_add_tex_clipped(&game->quads,
                                entity->p, entity->dims,
                                walk_frame.clip_p, walk_frame.clip_dims,
@@ -1087,7 +1076,9 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
           Attack *attack = entity->player.attacks + attack_idx;
           if (attack->current_secs >= attack->interval_secs)
           {
-            Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
+            Animation_Tick_Result tick_result = tick_animation(&attack->animation,
+                                                               get_animation_frames(AnimationFrames_ShadowSlash),
+                                                               game_update_secs);
             Animation_Frame frame = tick_result.frame;
             
             f32 offset_x = frame.offset.x*3;
@@ -1182,7 +1173,9 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         //
         // NOTE(cj): Render the green skull enemy
         //
-        Animation_Tick_Result skull_tick_result = tick_animation(&entity->enemy.animation, game_update_secs);
+        Animation_Tick_Result skull_tick_result = tick_animation(&entity->enemy.animation,
+                                                                 get_animation_frames(AnimationFrames_GreenSkullWalk),
+                                                                 game_update_secs);
         Animation_Frame skull_frame = skull_tick_result.frame;
         game_add_tex_clipped(&game->quads, entity->p, entity->dims,
                              skull_frame.clip_p, skull_frame.clip_dims,
@@ -1192,6 +1185,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         //
         // NOTE(cj): Damage the player
         // 
+        b32 the_attack_already_started = (entity->enemy.attack.animation.frame_idx != 0) || (entity->enemy.attack.animation.current_secs > 0.0f);
         b32 i_collided_with_player = check_aabb_collision_xy(entity->p.xy, (v2f){ entity->dims.x*0.5f, entity->dims.y*0.5f },
                                                              player->p.xy,
                                                              (v2f)
@@ -1200,12 +1194,14 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                                                                player->dims.y*0.5f,
                                                              });
         
-        if (i_collided_with_player)
+        if (the_attack_already_started || i_collided_with_player)
         {
           Attack *attack = &entity->enemy.attack;
           if (attack->current_secs >= attack->interval_secs)
           {
-            Animation_Tick_Result tick_result = tick_animation(&attack->animation, game_update_secs);
+            Animation_Tick_Result tick_result = tick_animation(&attack->animation,
+                                                               get_animation_frames(AnimationFrames_Bite),
+                                                               game_update_secs);
             Animation_Frame frame = tick_result.frame;
             v3f dims = (v3f){frame.clip_dims.x*3,frame.clip_dims.y*3,0};
             
