@@ -35,6 +35,12 @@ Assert(0);\
 
 #define HeyDeveloperPleaseImplementMeSoon() Assert(0)
 
+#if defined(_MSC_VER)
+# define ROTR32(r,c) _rotr((r), (c))
+#else
+# define ROTR32(r,c) (((r)>>(c))|((r)<<(-(c)&31)))
+#endif
+
 #define ArrayCount(a) (sizeof(a)/sizeof((a)[0]))
 #define Min(a,b) (((a)<(b))?(a):(b))
 #define Max(a,b) (((a)>(b))?(a):(b))

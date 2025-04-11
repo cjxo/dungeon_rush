@@ -14,10 +14,12 @@
 #include "./ext/stb_image.h"
 
 #include "base.h"
+#include "prng.h"
 #include "mathematical_objects.h"
 #include "game.h"
 
 #include "mathematical_objects.c"
+#include "prng.c"
 
 #if defined(GAME_DEBUG)
 # define DX11_ShaderCompileFlags (D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR|D3DCOMPILE_SKIP_OPTIMIZATION|D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS)
@@ -887,6 +889,15 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     anim_config->frame_idx = 0;
   }
   
+  prng32_seed(&game->prng, 13123);
+  
+  game->wave_number += 1;
+  game->next_wave_cooldown_max = 4.0f;
+  game->next_wave_cooldown_timer = game->next_wave_cooldown_max;
+  game->enemies_to_spawn = 0;
+  game->max_enemies_to_spawn = 10;
+  game->skull_enemy_spawn_timer_sec = 0.0f;
+  game->spawn_cooldown = 2.0f;
   //
   // NOTE(cj): init debug stuff
   //
@@ -899,7 +910,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     .tex_width = tex_width,
     .tex_height = tex_height,
   };
-  
 #endif
 }
 
@@ -974,19 +984,112 @@ draw_health_bar(Game_QuadArray *quads, Entity *entity)
 function void
 game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
 {
-  if (game->skull_enemy_spawn_timer_sec > 2.0f)
+  // the player is always at 0th idx
+  Entity *player = game->entities;
+  
+  if (game->next_wave_cooldown_timer <= game->next_wave_cooldown_max)
   {
-    game->skull_enemy_spawn_timer_sec = 0.0f;
-    // test entity
-    make_enemy_green_skull(game, (v3f) { 512, 0, 0 });
+    if (game->entity_count == 1)
+    {
+      game->next_wave_cooldown_timer += game_update_secs;
+    }
   }
   else
   {
-    game->skull_enemy_spawn_timer_sec += game_update_secs;
+    if (game->enemies_to_spawn < game->max_enemies_to_spawn)
+    {
+      if (game->skull_enemy_spawn_timer_sec > game->spawn_cooldown)
+      {
+        ++game->enemies_to_spawn;
+        v2f desired_camera_space_p = {0};
+        
+        f32 camera_width_half = (f32)g_application.reso_width * 0.5f;
+        f32 camera_height_half = (f32)g_application.reso_height * 0.5f;
+        f32 offset_amount = 50.0f;
+        
+        u32 spawn_area = prng32_rangeu32(&game->prng, 0, 8);
+        switch (spawn_area)
+        {
+          case 0:
+          {
+            desired_camera_space_p.x = -camera_width_half - offset_amount;
+            desired_camera_space_p.y = camera_height_half + offset_amount;
+          } break;
+          
+          case 1:
+          {
+            desired_camera_space_p.x = 0.0f;
+            desired_camera_space_p.y = camera_height_half + offset_amount;
+          } break;
+          
+          case 2:
+          {
+            desired_camera_space_p.x = camera_width_half + offset_amount;
+            desired_camera_space_p.y = camera_height_half + offset_amount;
+          } break;
+          
+          case 3:
+          {
+            desired_camera_space_p.x = camera_width_half + offset_amount;
+            desired_camera_space_p.y = 0.0f;
+          } break;
+          
+          case 4:
+          {
+            desired_camera_space_p.x = camera_width_half + offset_amount;
+            desired_camera_space_p.y = -camera_height_half - offset_amount;
+          } break;
+          
+          case 5:
+          {
+            desired_camera_space_p.x = 0.0f;
+            desired_camera_space_p.y = -camera_height_half - offset_amount;
+          } break;
+          
+          case 6:
+          {
+            desired_camera_space_p.x = -camera_width_half - offset_amount;
+            desired_camera_space_p.y = -camera_height_half - offset_amount;
+          } break;
+          
+          case 7:
+          {
+            desired_camera_space_p.x = -camera_width_half - offset_amount;
+            desired_camera_space_p.y = 0.0f;
+          } break;
+          
+          InvalidDefaultCase();
+        }
+        
+        v3f world_space_p =
+        {
+          desired_camera_space_p.x + player->p.x,
+          desired_camera_space_p.y + player->p.y,
+          0.0f
+        };
+        
+        // test entity
+        make_enemy_green_skull(game, world_space_p);
+        game->skull_enemy_spawn_timer_sec = 0.0f;
+      }
+      else
+      {
+        game->skull_enemy_spawn_timer_sec += game_update_secs;
+      }
+    }
+    else
+    {
+      game->next_wave_cooldown_timer = 0.0f;
+      game->max_enemies_to_spawn += 1;
+      game->enemies_to_spawn = 0;
+      game->wave_number += 1;
+      if (game->spawn_cooldown >= 0.75f)
+      {
+        game->spawn_cooldown -= 0.01f;
+      }
+    }
   }
   
-  // the player is always at 0th idx
-  Entity *player = game->entities;
   for (u64 entity_idx = 0;
        entity_idx < game->entity_count;
        ++entity_idx)

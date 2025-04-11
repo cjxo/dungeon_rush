@@ -146,10 +146,18 @@ typedef struct
   M_Arena *arena;
   Game_QuadArray quads;
   
+  PRNG32 prng;
+  
   u64 entity_count;
   Entity entities[512];
   
+  u32 wave_number;
+  f32 next_wave_cooldown_timer;
+  f32 next_wave_cooldown_max;
+  u32 enemies_to_spawn;
+  u32 max_enemies_to_spawn;
   f32 skull_enemy_spawn_timer_sec;
+  f32 spawn_cooldown;
   
 #if defined(DR_DEBUG)
   b32 dbg_draw_entity_wires;
