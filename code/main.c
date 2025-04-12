@@ -752,6 +752,16 @@ game_add_tex_clipped(Game_QuadArray *quads,
   return(result);
 }
 
+function Animation_Config
+create_animation_config(f32 duration_secs)
+{
+  Animation_Config result;
+  result.current_secs = 0.0f;
+  result.duration_secs = duration_secs;
+  result.frame_idx = 0;
+  return(result);
+}
+
 inline function Entity *
 make_entity(Game_State *game, Entity_Type type, Entity_Flag flags)
 {
@@ -786,10 +796,7 @@ make_enemy_green_skull(Game_State *game, v3f p)
     .damage = 4,
   };
   
-  Animation_Config *anim_config = &(result->enemy.attack.animation);
-  anim_config->current_secs = 0.0f;
-  anim_config->duration_secs = 0.04f;
-  anim_config->frame_idx = 0;
+  result->enemy.attack.animation = create_animation_config(0.04f);
   
   return(result);
 }
@@ -868,10 +875,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
     // NOTE(cj): the player's base HP is 50
     player->max_hp = player->current_hp = 50.0f;
     
-    Animation_Config *anim_config = &(player->player.walk_animation);
-    anim_config->current_secs = 0.0f;
-    anim_config->duration_secs = 0.15f;
-    anim_config->frame_idx = 0;
+    player->player.walk_animation = create_animation_config(0.15f);
     
     player->dims = (v3f){ 64, 64, 0 };
     player->player.attack_count = 1;
@@ -883,14 +887,14 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
       .damage = 6,
     };
     
-    anim_config = &(player->player.attacks[0].animation);
-    anim_config->current_secs = 0.0f;
-    anim_config->duration_secs = 0.04f;
-    anim_config->frame_idx = 0;
+    player->player.attacks[0].animation = create_animation_config(0.04f);
   }
   
   prng32_seed(&game->prng, 13123);
   
+  //
+  // NOTE(cj): Wave stufff
+  //
   game->wave_number += 1;
   game->next_wave_cooldown_max = 4.0f;
   game->next_wave_cooldown_timer = game->next_wave_cooldown_max;
@@ -898,6 +902,7 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
   game->max_enemies_to_spawn = 10;
   game->skull_enemy_spawn_timer_sec = 0.0f;
   game->spawn_cooldown = 2.0f;
+  
   //
   // NOTE(cj): init debug stuff
   //
@@ -1090,9 +1095,9 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
     }
   }
   
-  for (u64 entity_idx = 0;
-       entity_idx < game->entity_count;
-       ++entity_idx)
+  // hehehehehhehe... my mind just randomly told me to try this...
+  // dont mind me.
+  ForLoopU64(entity_idx, game->entity_count)
   {
     Entity *entity = game->entities + entity_idx;
     switch (entity->type)
@@ -1213,7 +1218,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                    ++entity_to_collide_idx)
               {
                 Entity *possible_collision = game->entities + entity_to_collide_idx;
-                if (!!(possible_collision->flags & EntityFlag_Hostile))
+                if (!!(possible_collision->flags & (EntityFlag_Hostile|EntityFlag_DeleteMe)))
                 {
                   b32 attack_collided_with_entity = check_aabb_collision_xy(p.xy, half_dims,
                                                                             possible_collision->p.xy,
@@ -1228,11 +1233,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                     possible_collision->current_hp -= attack->damage;
                     if (possible_collision->current_hp <= 0.0f)
                     {
-                      if (entity_to_collide_idx != (game->entity_count - 1))
-                      {
-                        game->entities[entity_to_collide_idx--] = game->entities[game->entity_count - 1];
-                      }
-                      --game->entity_count;
+                      possible_collision->flags |= EntityFlag_DeleteMe;
                     }
                   }
                 }
@@ -1259,14 +1260,18 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
       
       case EntityType_GreenSkull:
       {
-        //
-        // NOTE(cj): Update movement
-        //
-        f32 follow_speed = 32.0f;
-        v3f to_player = v3f_sub_and_normalize_or_zero(player->p, entity->p);
-        to_player.x *= follow_speed * game_update_secs;
-        to_player.y *= follow_speed * game_update_secs;
-        v3f_add_eq(&entity->p, to_player);
+        b32 delete_me = !!(entity->flags & EntityFlag_DeleteMe);
+        if (!delete_me)
+        {
+          //
+          // NOTE(cj): Update movement
+          //
+          f32 follow_speed = 32.0f;
+          v3f to_player = v3f_sub_and_normalize_or_zero(player->p, entity->p);
+          to_player.x *= follow_speed * game_update_secs;
+          to_player.y *= follow_speed * game_update_secs;
+          v3f_add_eq(&entity->p, to_player);
+        }
         
         //
         // NOTE(cj): Render HP 
@@ -1297,11 +1302,26 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                                                                player->dims.y*0.5f,
                                                              });
         
-        if (the_attack_already_started || i_collided_with_player)
+        //
+        // NOTE(cj): !the_attack_already_started = (entity->enemy.attack.animation.frame_idx == 0) && (entity->enemy.attack.animation.current_secs <= 0.0f)
+        // My goal of this condition is to only delete the enemy if it is marked as DeleteMe and (most importantly) the attack hasn't started yet.
+        // Because If the attack as started but we have deleted the enemy, the attack animation will not complete. We want a complete attack cycle 
+        // before deleting the enemy.
+        //
+        if (!the_attack_already_started && delete_me)
+        {
+          if (entity_idx != (game->entity_count - 1))
+          {
+            game->entities[entity_idx--] = game->entities[game->entity_count - 1];
+          }
+          --game->entity_count;
+        }
+        else if (the_attack_already_started || i_collided_with_player)
         {
           Attack *attack = &entity->enemy.attack;
           if (attack->current_secs >= attack->interval_secs)
           {
+            //queue_attack(game, *attack, player->p, 1, 0);
             Animation_Tick_Result tick_result = tick_animation(&attack->animation,
                                                                get_animation_frames(AnimationFrames_Bite),
                                                                game_update_secs);

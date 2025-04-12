@@ -70,6 +70,7 @@ enum
   AnimationFrames_Count,
 };
 
+function Animation_Config create_animation_config(f32 duration_secs);
 function Animation_Tick_Result tick_animation(Animation_Config *anim, Animation_Frames frame_info, f32 seconds_elapsed);
 function Animation_Frames get_animation_frames(AnimationFrame_For frame_for);
 
@@ -77,7 +78,6 @@ typedef u32 Attack_Type;
 enum
 {
   AttackType_ShadowSlash,
-  
   AttackType_Bite,
   AttackType_Count,
 };
@@ -95,6 +95,7 @@ typedef u64 Entity_Flag;
 enum
 {
   EntityFlag_Hostile = 0x1,
+  EntityFlag_DeleteMe = 0x2,
 };
 
 typedef u64 Entity_Type;

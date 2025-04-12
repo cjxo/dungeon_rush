@@ -35,6 +35,8 @@ Assert(0);\
 
 #define HeyDeveloperPleaseImplementMeSoon() Assert(0)
 
+#define ForLoopU64(idx_name,limit) for (u64 idx_name = 0; idx_name < (limit); ++(idx_name))
+
 #if defined(_MSC_VER)
 # define ROTR32(r,c) _rotr((r), (c))
 #else
