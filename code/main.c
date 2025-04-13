@@ -496,7 +496,7 @@ dx11_create_blend_states(Application_State *app)
 }
 
 function void
-dx11_create_font_atlas(Application_State *app)
+dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
 {
   // Questions to answer:
   // 1. Font
@@ -563,7 +563,7 @@ dx11_create_font_atlas(Application_State *app)
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/about-text-output
   // - https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-gettextmetrics
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/using-the-font-and-text-output-functions
-  s32 point_size = 18;
+  s32 point_size = 16;
   AddFontResourceExA("..\\res\\fonts\\Pixelify_Sans\\PixelifySans-VariableFont_wght.ttf", FR_PRIVATE, 0);
   app->font = CreateFontA(-(point_size * 96)/72, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
@@ -571,12 +571,9 @@ dx11_create_font_atlas(Application_State *app)
   
   if (app->font)
   {
-    s32 bitmap_width = 256;
-    s32 bitmap_height = 256;
-    
-    // TODO(cj): Temporary Dims. set to 512
-    s32 atlas_width = bitmap_width;
-    s32 atlas_height = bitmap_height;
+#define MaxBitmapSize 512
+    s32 bitmap_width = MaxBitmapSize;
+    s32 bitmap_height = MaxBitmapSize;
     
     HDC dc = CreateCompatibleDC(0);
     HBITMAP bitmap = CreateCompatibleBitmap(dc, bitmap_width, bitmap_height);
@@ -592,8 +589,39 @@ dx11_create_font_atlas(Application_State *app)
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(255,255,255));
     
-    char str[] = "Fair-Weather Faith";
-    TextOut(dc, 0, 0, str, sizeof(str) - 1);
+    TEXTMETRIC text_metrics;
+    GetTextMetrics(dc, &text_metrics);
+    
+    s32 gap = 4;
+    s32 pen_x = gap;
+    s32 pen_y = gap;
+    SetTextAlign(dc, TA_TOP|TA_LEFT);
+    for (u8 codepoint = 32; codepoint < 128; ++codepoint)
+    {
+      SIZE glyph_dims;
+      char c = (char)codepoint;
+      GetTextExtentPoint32A(dc, &c, 1, &glyph_dims);
+      
+      if ((pen_x + glyph_dims.cx + gap) >= bitmap_width)
+      {
+        pen_x = gap;
+        pen_y += text_metrics.tmHeight + gap;
+      }
+      
+      // https://learn.microsoft.com/en-us/windows/win32/gdi/character-widths
+      f32 advance_x;
+      // is this correcT???????????????? I am not convinced............................
+      GetCharWidthFloatA(dc, codepoint, codepoint, &advance_x);
+      advance_x *= 64.0f;
+      
+      renderer->glyphs[codepoint].advance = advance_x;
+      renderer->glyphs[codepoint].clip_x = (f32)pen_x;
+      renderer->glyphs[codepoint].clip_y = (f32)pen_y;
+      
+      TextOut(dc, pen_x, pen_y, &c, 1);
+      
+      pen_x += glyph_dims.cx + gap;
+    }
     
     BITMAPINFO bitmap_info = {0};
     bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
@@ -603,11 +631,15 @@ dx11_create_font_atlas(Application_State *app)
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
     
-    u8 buffer[256*256*4], out[256*256*4];
-    GetDIBits(dc, bitmap, 0, bitmap_height, buffer, &bitmap_info, DIB_RGB_COLORS);
+    HANDLE process_heap = GetProcessHeap();
+    DWORD heap_flags = HEAP_GENERATE_EXCEPTIONS | HEAP_NO_SERIALIZE;
+    u64 bitmap_area = bitmap_width*bitmap_height*4;
+    u8 *source_buffer = HeapAlloc(process_heap, heap_flags, bitmap_area);
+    u8 *dest_buffer = HeapAlloc(process_heap, heap_flags, bitmap_area);
+    GetDIBits(dc, bitmap, 0, bitmap_height, source_buffer, &bitmap_info, DIB_RGB_COLORS);
     
-    u8 *src = buffer;
-    u8 *dest = out;
+    u8 *src = source_buffer;
+    u8 *dest = dest_buffer;
     for (s32 y_pix = 0; y_pix < bitmap_height; ++y_pix)
     {
       u8 *dest_row = dest;
@@ -627,8 +659,8 @@ dx11_create_font_atlas(Application_State *app)
     
     D3D11_TEXTURE2D_DESC atlas_desc =
     {
-      .Width = atlas_width,
-      .Height = atlas_height,
+      .Width = bitmap_width,
+      .Height = bitmap_height,
       .MipLevels = 1,
       .ArraySize = 1,
       .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -641,8 +673,8 @@ dx11_create_font_atlas(Application_State *app)
     
     D3D11_SUBRESOURCE_DATA atlas_subrec =
     {
-      .pSysMem = out,
-      .SysMemPitch = atlas_width*4,
+      .pSysMem = dest_buffer,
+      .SysMemPitch = bitmap_width*4,
     };
     ID3D11Texture2D *atlas_font_tex;
     
@@ -656,6 +688,8 @@ dx11_create_font_atlas(Application_State *app)
       Assert(!"Log Soon");
     }
     
+    HeapFree(process_heap, heap_flags, source_buffer);
+    HeapFree(process_heap, heap_flags, dest_buffer);
     DeleteObject(bitmap);
     DeleteDC(dc);
   }
@@ -1027,18 +1061,9 @@ get_animation_frames(AnimationFrame_For frame_for)
 }
 
 function void
-game_init(Game_State *game, s32 tex_width, s32 tex_height)
+game_init(Game_State *game)
 {
   game->arena = m_arena_reserve(MB(2));
-  game->quads = (Game_QuadArray)
-  {
-    .quads = M_Arena_PushArray(game->arena, Game_Quad, Game_MaxQuads),
-    .capacity = Game_MaxQuads,
-    .count = 0,
-    .tex_width = tex_width,
-    .tex_height = tex_height,
-  };
-  
   // player entity
   {
     Entity *player = make_entity(game, EntityType_Player, 0);
@@ -1075,20 +1100,6 @@ game_init(Game_State *game, s32 tex_width, s32 tex_height)
   game->max_enemies_to_spawn = 10;
   game->skull_enemy_spawn_timer_sec = 0.0f;
   game->spawn_cooldown = 2.0f;
-  
-  //
-  // NOTE(cj): init debug stuff
-  //
-#if defined(DR_DEBUG)
-  game->dbg_wire_quads = (Game_QuadArray)
-  {
-    .quads = M_Arena_PushArray(game->arena, Game_Quad, Game_MaxQuads),
-    .capacity = Game_MaxQuads,
-    .count = 0,
-    .tex_width = tex_width,
-    .tex_height = tex_height,
-  };
-#endif
 }
 
 function Animation_Tick_Result
@@ -1160,7 +1171,7 @@ draw_health_bar(Game_QuadArray *quads, Entity *entity)
 }
 
 function void
-game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
+game_update_and_render(Game_State *game, OS_Input *input, Renderer_State *renderer, f32 game_update_secs)
 {
   // the player is always at 0th idx
   Entity *player = game->entities;
@@ -1318,7 +1329,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         //
         // NOTE(cj): Render HP 
         //
-        draw_health_bar(&game->quads, entity);
+        draw_health_bar(&renderer->filled_quads, entity);
         
         //
         // NOTE(cj): Drawing/Animation update of player
@@ -1328,7 +1339,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
           Animation_Frame walk_frame = tick_animation(&entity->player.walk_animation,
                                                       get_animation_frames(AnimationFrames_PlayerWalk),
                                                       game_update_secs).frame;
-          game_add_tex_clipped(&game->quads,
+          game_add_tex_clipped(&renderer->filled_quads,
                                entity->p, entity->dims,
                                walk_frame.clip_p, walk_frame.clip_dims,
                                (v4f){1,1,1,1},
@@ -1336,7 +1347,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         }
         else
         {
-          game_add_tex_clipped(&game->quads,
+          game_add_tex_clipped(&renderer->filled_quads,
                                entity->p, entity->dims,
                                (v2f){0,0}, (v2f){16,16},
                                (v4f){1,1,1,1},
@@ -1413,7 +1424,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
               }
             }
             
-            game_add_tex_clipped(&game->quads, p, dims,
+            game_add_tex_clipped(&renderer->filled_quads, p, dims,
                                  frame.clip_p, frame.clip_dims,
                                  (v4f){1,1,1,1},
                                  entity->last_face_dir);
@@ -1449,7 +1460,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
         //
         // NOTE(cj): Render HP 
         //
-        draw_health_bar(&game->quads, entity);
+        draw_health_bar(&renderer->filled_quads, entity);
         
         //
         // NOTE(cj): Render the green skull enemy
@@ -1458,7 +1469,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
                                                                  get_animation_frames(AnimationFrames_GreenSkullWalk),
                                                                  game_update_secs);
         Animation_Frame skull_frame = skull_tick_result.frame;
-        game_add_tex_clipped(&game->quads, entity->p, entity->dims,
+        game_add_tex_clipped(&renderer->filled_quads, entity->p, entity->dims,
                              skull_frame.clip_p, skull_frame.clip_dims,
                              (v4f){1,1,1,1},
                              entity->last_face_dir);
@@ -1522,7 +1533,7 @@ game_update_and_render(Game_State *game, OS_Input *input, f32 game_update_secs)
             // NOTE(cj): Draw the bite animation ON player
             // (the player must be drawn first...!)
             //
-            game_add_tex_clipped(&game->quads, player->p, dims,
+            game_add_tex_clipped(&renderer->filled_quads, player->p, dims,
                                  frame.clip_p, frame.clip_dims,
                                  (v4f){1,1,1,1},
                                  0);
@@ -1601,18 +1612,44 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                                            0, 0, w32_client_rect.right - w32_client_rect.left, w32_client_rect.bottom - w32_client_rect.top,
                                            0, 0, wnd_class.hInstance, &g_application);
     
+    Renderer_State renderer = {0};
     dx11_create_swap_chain(&g_application);
     dx11_create_game_main_state(&g_application);
     dx11_create_rasterizer_states(&g_application);
     dx11_create_sampler_states(&g_application);
-    dx11_create_font_atlas(&g_application);
+    dx11_create_font_atlas(&g_application, &renderer);
     
     if (IsWindow(g_application.window))
     {
       ShowWindow(g_application.window, SW_SHOW);
       
       Game_State game = {0};
-      game_init(&game, g_application.game_diffse_sheet_width, g_application.game_diffse_sheet_height);
+      game_init(&game);
+      
+      renderer.filled_quads = (Game_QuadArray)
+      {
+        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
+        .capacity = Game_MaxQuads,
+        .count = 0,
+        .tex_width = g_application.game_diffse_sheet_width,
+        .tex_height = g_application.game_diffse_sheet_height,
+      };
+      
+      
+      //
+      // NOTE(cj): init debug stuff
+      //
+#if defined(DR_DEBUG)
+      renderer.wire_quads = (Game_QuadArray)
+      {
+        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
+        .capacity = Game_MaxQuads,
+        .count = 0,
+        .tex_width = g_application.game_diffse_sheet_width,
+        .tex_height = g_application.game_diffse_sheet_height,
+      };
+#endif
+      
       LARGE_INTEGER perf_counter_begin;
       while (1)
       {
@@ -1651,8 +1688,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ExitProcess(0);
         }
         
-        game_update_and_render(&game, input, seconds_per_frame);
-        //game_add_tex(&game.quads, (v3f){0,0,0}, (v3f){256,256,0}, (v4f){1,1,1,1});
+        //game_update_and_render(&game, input, &renderer, seconds_per_frame);
+        game_add_tex(&renderer.filled_quads, (v3f){0,0,0}, (v3f){512,512,0}, (v4f){1,1,1,1});
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
@@ -1666,7 +1703,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                ++entity_idx)
           {
             Entity *entity = game.entities + entity_idx;
-            game_add_rect(&game.dbg_wire_quads, entity->p, entity->dims, (v4f){ 0, 0, 1, 1 });
+            game_add_rect(&renderer.wire_quads, entity->p, entity->dims, (v4f){ 0, 0, 1, 1 });
           }
         }
 #endif
@@ -1718,13 +1755,13 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_main, 0, 0);
         ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
         ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
-        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
-        //ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.debug_test_font_tex_srv);
+        //ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
+        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.debug_test_font_tex_srv);
         
         ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
         ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
         
-        Game_QuadArray game_quads = game.quads;
+        Game_QuadArray game_quads = renderer.filled_quads;
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
@@ -1734,10 +1771,10 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
-        game.quads.count = 0;
+        renderer.filled_quads.count = 0;
         
 #if defined(DR_DEBUG)
-        game_quads = game.dbg_wire_quads;
+        game_quads = renderer.wire_quads;
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_wire_no_cull_ccw);
@@ -1746,7 +1783,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
-        game.dbg_wire_quads.count = 0;
+        renderer.wire_quads.count = 0;
 #endif
         
         ID3D11DeviceContext_ClearState(g_application.device_context);

@@ -3,11 +3,6 @@
 #ifndef GAME_H
 #define GAME_H
 
-typedef union
-{
-  u64 h[1];
-} R_Handle;
-
 #define Game_MaxQuads 1024
 typedef struct
 {
@@ -20,6 +15,12 @@ typedef struct
 
 typedef struct
 {
+  f32 advance;
+  f32 clip_x, clip_y;
+} Glyph_Data;
+
+typedef struct
+{
   Game_Quad *quads;
   u64 capacity;
   u64 count;
@@ -29,6 +30,14 @@ typedef struct
   s32 tex_height;
 } Game_QuadArray;
 
+typedef struct
+{
+  Game_QuadArray filled_quads;
+  Game_QuadArray wire_quads;
+  Glyph_Data glyphs[128];
+} Renderer_State;
+
+// ----------------------- //
 typedef struct
 {
   v2f clip_p;
@@ -145,7 +154,6 @@ struct Entity
 typedef struct
 {
   M_Arena *arena;
-  Game_QuadArray quads;
   
   PRNG32 prng;
   
@@ -162,7 +170,6 @@ typedef struct
   
 #if defined(DR_DEBUG)
   b32 dbg_draw_entity_wires;
-  Game_QuadArray dbg_wire_quads;
 #endif
 } Game_State;
 
