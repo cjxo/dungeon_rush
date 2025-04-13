@@ -131,6 +131,10 @@ typedef struct
   ID3D11SamplerState *sampler_point_all;
   
   ID3D11BlendState *blend_blend;
+  
+  HFONT font;
+  // TODO(cj): Remove this after font extraction
+  ID3D11ShaderResourceView *debug_test_font_tex_srv;
 } Application_State;
 
 function void
@@ -489,7 +493,176 @@ dx11_create_blend_states(Application_State *app)
   blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
   
   ID3D11Device_CreateBlendState(app->device, &blend_desc, &app->blend_blend);
+}
+
+function void
+dx11_create_font_atlas(Application_State *app)
+{
+  // Questions to answer:
+  // 1. Font
+  //   - a font is a collection of characters and symbols that share a common design, including look, style, and serifs. But,
+  //     we need to distinguish Font Family and Font Faces and be precise on our definitions.
+  //  
+  //   a. Font Face (or Type Face) - is a collection of characters and symbols that share a common design, including look, style, and serifs.
+  //      > For style, it is the inclination (think of it as a skew) to the vertical axis. (Regular Vs. Italic)
+  //      > For weight, it defines the boldness of the character.
+  //      > For serif, it is the short cross line at the ends of an unconnected stroke
+  //
+  //   b. Font Family - A group of Font Faces that share basic design characteristics.
+  // 
+  //   Hence, we see that if the Font Family name is "Palatino.ttf", then "Palatino Regular" and "Palatino Italic" are Font Faces of the
+  //   Font Family "Palatino". A font file containing more than one font face is called "Font Collection".
+  //
+  //   Character Images in a Font Face are called "Glyphs". Each glyph is stored as a bitmap, a vector representation, or SDFs.
+  //   These glyphs are typically accessed as a "Glyph Index" in the Font Face. Font Faces one or more tables called "Character Maps". 
+  //   These charmaps are used to map codepoint for a given encoding to glyph indices.
+  //
+  //   Ways to display text:
+  //   1. Raster Font: created by a sequence of pixels (pels or dots) that form a character called "Raster Pattern". The number of dots per inch(DPI)
+  //      a printer generates is the print resolution. For instance, if the DPI is 240, this means every physical inch is equivalent to 240 pixels.
+  //      This implies that the higher the DPI is, the more resolute the font is.
+  //
+  //   2. Vectorial Representation: A glyph is creating with a collection of line vertices that define the line segments that the system uses
+  //      to draw a character or symbol in the font. Hence, we can give this vertex information to a triangulator to draw the glyph.
+  //      Note that glyphs in this representation are scalable; That is, they're device independent.
+  //
+  //   3. TrueType/OpenType: a glyph is a collection of line and curve commands as well as a collection of hints. Said another way,
+  //      glyphs in this representation are created through Mathematical Formulas rather the pixels. These formulas are then used by
+  //      a Glyph Rasterizer to create bitmap characters that depends on two variables: Resolution (in DPI) and Point Size (we discuss sizing soon).
+  //      This implies that fonts can be rasterized at MANY RESOLUTIONS and POINT SIZES. "Hints" are contained in TrueType/OpenType to
+  //      make sure that typographic characteristics of the typeface are maintained in a consistent manner throughout all printed characters. That is,
+  //      it adjusts the length of lines and shapes of curves to draw glyphs.
+  //
+  //   "Sizes":
+  //     Output devices have varying resolutions. Hence, it is common to describe output device's characteristics with two numbers expressed in Dots Per Inch (DPI).
+  //     All fonts are measured in points (the vertical size of the font). One inch is equivalent to 72 points. In other words, 1 point(pt) is equivalent to 1/72 inch.
+  //     Measuring text size is a problem because because pixels are not all the same size. Hence, the size of the pixel depends on the RESOLUTION (in DPI) and
+  //     the PHYSICAL SIZE OF THE MONITOR. Hence, fonts instead are measured in "Logical Units". Hence, a 72 pt (1 in) font is one logical inch tall. This logical inch
+  //     is then converted to pixels. !!IMPORTANT!! for windows: one logical inch is 96 DPI. Hence, given the POINT SIZE of the font, the pixel size is:
+  //                                                                     pixel_size = pt_size * 96/72.
+  //     
+  //     When designing a glyph, the designer uses an imaginary square called the EM square (design units maybe?). It can be thought as a tablet on which characters are drawn.
+  //     It is used to scale outlines to a given text dimension. Another acronym used for the pixel size is ppem (pixel per EM).
+  // 
+  // 2. ClearType
+  //   - Created by Microsoft to improve "readability" of text on LCDs.
+  //     Words on computer screen looks almost as sharp and clear as those printed on a piece of paper.
+  //     LCD monitor pixels have "subpixels" that have three vertical stripes of colour. Because of this,
+  //     ClearType can now display features of text as small as a fraction of a pixel in width.
+  //               
+  //     Hence, a pixel of an LCD screen has three subpixel stripes: red, green, and blue. Zooming out,
+  //     the human brain interprets these combinations as a single coloured pixel. For instance, if you
+  //     see a white pixel, zooming in, you will actually see a fully lit red, green, and blue subpixels.
+  //
+  //     ClearType is a form of sub-pixel font rendering that draws text using a pixel's red-green-blue (RGB) components separately
+  //     instead of using the entire pixel. When the pixel is used in this way, horizontal resolution theoretically increases 300 percent.
+  //
+  // TODO(cj): We might want NONANTIALIASED_QUALITY.
   
+  // TODO(cj): Checkout
+  // - https://learn.microsoft.com/en-us/windows/win32/gdi/about-text-output
+  // - https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-gettextmetrics
+  // - https://learn.microsoft.com/en-us/windows/win32/gdi/using-the-font-and-text-output-functions
+  s32 point_size = 18;
+  AddFontResourceExA("..\\res\\fonts\\Pixelify_Sans\\PixelifySans-VariableFont_wght.ttf", FR_PRIVATE, 0);
+  app->font = CreateFontA(-(point_size * 96)/72, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
+                          OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                          DEFAULT_PITCH, "Pixelify Sans");
+  
+  if (app->font)
+  {
+    s32 bitmap_width = 256;
+    s32 bitmap_height = 256;
+    
+    // TODO(cj): Temporary Dims. set to 512
+    s32 atlas_width = bitmap_width;
+    s32 atlas_height = bitmap_height;
+    
+    HDC dc = CreateCompatibleDC(0);
+    HBITMAP bitmap = CreateCompatibleBitmap(dc, bitmap_width, bitmap_height);
+    
+    RECT r;
+    r.top = 0;
+    r.left = 0;
+    r.right = bitmap_width;
+    r.bottom = bitmap_height;
+    SelectObject(dc, bitmap);
+    FillRect(dc, &r, GetStockObject(BLACK_BRUSH));
+    SelectObject(dc, app->font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255,255,255));
+    
+    char str[] = "Fair-Weather Faith";
+    TextOut(dc, 0, 0, str, sizeof(str) - 1);
+    
+    BITMAPINFO bitmap_info = {0};
+    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
+    bitmap_info.bmiHeader.biWidth = bitmap_width;
+    bitmap_info.bmiHeader.biHeight = -bitmap_height;
+    bitmap_info.bmiHeader.biPlanes = 1;
+    bitmap_info.bmiHeader.biBitCount = 32;
+    bitmap_info.bmiHeader.biCompression = BI_RGB;
+    
+    u8 buffer[256*256*4], out[256*256*4];
+    GetDIBits(dc, bitmap, 0, bitmap_height, buffer, &bitmap_info, DIB_RGB_COLORS);
+    
+    u8 *src = buffer;
+    u8 *dest = out;
+    for (s32 y_pix = 0; y_pix < bitmap_height; ++y_pix)
+    {
+      u8 *dest_row = dest;
+      u8 *src_row = src;
+      for (s32 x_pix = 0; x_pix < bitmap_width; ++x_pix)
+      {
+        *dest_row++ = src_row[0];
+        *dest_row++ = src_row[1];
+        *dest_row++ = src_row[2];
+        *dest_row++ = src_row[0];
+        src_row += 4;
+      }
+      
+      dest += bitmap_width * 4;
+      src += bitmap_width * 4;
+    }
+    
+    D3D11_TEXTURE2D_DESC atlas_desc =
+    {
+      .Width = atlas_width,
+      .Height = atlas_height,
+      .MipLevels = 1,
+      .ArraySize = 1,
+      .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+      .SampleDesc = { 1, 0 },
+      .Usage = D3D11_USAGE_IMMUTABLE,
+      .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+      .CPUAccessFlags = 0,
+      .MiscFlags = 0,
+    };
+    
+    D3D11_SUBRESOURCE_DATA atlas_subrec =
+    {
+      .pSysMem = out,
+      .SysMemPitch = atlas_width*4,
+    };
+    ID3D11Texture2D *atlas_font_tex;
+    
+    if (SUCCEEDED(ID3D11Device_CreateTexture2D(app->device, &atlas_desc, &atlas_subrec, &atlas_font_tex)))
+    {
+      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)atlas_font_tex, 0, &app->debug_test_font_tex_srv);
+      ID3D11Texture2D_Release(atlas_font_tex);
+    }
+    else
+    {
+      Assert(!"Log Soon");
+    }
+    
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+  }
+  else
+  {
+    Assert(!"Log Soon");
+  }
 }
 
 function OS_Input_KeyType
@@ -1432,6 +1605,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
     dx11_create_game_main_state(&g_application);
     dx11_create_rasterizer_states(&g_application);
     dx11_create_sampler_states(&g_application);
+    dx11_create_font_atlas(&g_application);
     
     if (IsWindow(g_application.window))
     {
@@ -1478,6 +1652,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         }
         
         game_update_and_render(&game, input, seconds_per_frame);
+        //game_add_tex(&game.quads, (v3f){0,0,0}, (v3f){256,256,0}, (v4f){1,1,1,1});
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
@@ -1544,6 +1719,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
         ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
         ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
+        //ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.debug_test_font_tex_srv);
         
         ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
         ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
