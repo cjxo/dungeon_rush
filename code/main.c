@@ -498,8 +498,9 @@ dx11_create_blend_states(Application_State *app)
 }
 
 function void
-dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
+dx11_create_font_atlas(Application_State *app, Game_Memory *memory)
 {
+  Renderer_State *renderer = &memory->renderer;
   // Questions to answer:
   // 1. Font
   //   - a font is a collection of characters and symbols that share a common design, including look, style, and serifs. But,
@@ -611,18 +612,12 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
         pen_y += text_metrics.tmHeight + gap;
       }
       
-      if (codepoint == 'e')
-      {
-        int abbb = 0;
-        (void)abbb;
-      }
-      
       // https://learn.microsoft.com/en-us/windows/win32/gdi/character-widths
       ABCFLOAT abc;
       GetCharABCWidthsFloatA(dc, codepoint, codepoint, &abc);
       f32 advance_x = (abc.abcfA + abc.abcfB + abc.abcfC);
       
-#if 1
+#if 0
       GLYPHMETRICS metrics = {0};
       MAT2 mat =
       {
@@ -637,40 +632,6 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
       //advance_x = (advance_x);
       
       TextOut(dc, pen_x, pen_y, &c, 1);
-      
-#if 0
-      s32 min_y = 999999;
-      s32 max_y = -999999;
-      for (s32 y = pen_y; y < (pen_y + glyph_dims.cy); ++y)
-      {
-        for (s32 x = pen_x; x < (pen_x + glyph_dims.cx); ++x)
-        {
-          COLORREF texel = GetPixel(dc, x, y);
-          if (texel)
-          {
-            if (y < min_y)
-            {
-              min_y = y;
-            }
-            
-            if (y > max_y)
-            {
-              max_y = y;
-            }
-          }
-        }
-      }
-      
-      if (max_y >= min_y)
-      {
-        max_y += 1;
-      }
-      else
-      {
-        min_y = pen_y;
-        max_y = pen_y + glyph_dims.cy;
-      }
-#endif
       
       renderer->glyphs[codepoint].advance = advance_x;
       renderer->glyphs[codepoint].clip_x = (f32)pen_x;
@@ -690,11 +651,10 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
     
-    HANDLE process_heap = GetProcessHeap();
-    DWORD heap_flags = HEAP_GENERATE_EXCEPTIONS | HEAP_NO_SERIALIZE;
+    Temporary_Memory temp_mem = begin_temporary_memory(memory->temporary);
     u64 bitmap_area = bitmap_width*bitmap_height*4;
-    u8 *source_buffer = HeapAlloc(process_heap, heap_flags, bitmap_area);
-    u8 *dest_buffer = HeapAlloc(process_heap, heap_flags, bitmap_area);
+    u8 *source_buffer = m_arena_push(temp_mem.arena, bitmap_area);
+    u8 *dest_buffer = m_arena_push(temp_mem.arena, bitmap_area);
     GetDIBits(dc, bitmap, 0, bitmap_height, source_buffer, &bitmap_info, DIB_RGB_COLORS);
     
     u8 *src = source_buffer;
@@ -750,8 +710,7 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
       Assert(!"Log Soon");
     }
     
-    HeapFree(process_heap, heap_flags, source_buffer);
-    HeapFree(process_heap, heap_flags, dest_buffer);
+    end_temporary_memory(temp_mem);
     DeleteObject(bitmap);
     DeleteDC(dc);
   }
@@ -955,6 +914,24 @@ m_arena_pop(M_Arena *arena, u64 pop_size)
   }
 }
 
+inline function Temporary_Memory
+begin_temporary_memory(M_Arena *arena)
+{
+  Assert(!!arena);
+  Temporary_Memory result;
+  result.arena = arena;
+  result.start_stack_ptr = arena->stack_ptr;
+  return(result);
+}
+
+inline function void
+end_temporary_memory(Temporary_Memory temp)
+{
+  Assert(!!temp.arena);
+  Assert(temp.arena->stack_ptr >= temp.start_stack_ptr);
+  m_arena_pop(temp.arena, temp.arena->stack_ptr - temp.start_stack_ptr);
+}
+
 function Application_State g_application;
 
 inline function Game_Quad *
@@ -1155,7 +1132,6 @@ get_animation_frames(AnimationFrame_For frame_for)
 function void
 game_init(Game_State *game)
 {
-  game->arena = m_arena_reserve(MB(2));
   // player entity
   {
     Entity *player = make_entity(game, EntityType_Player, 0);
@@ -1263,8 +1239,9 @@ draw_health_bar(Game_QuadArray *quads, Entity *entity)
 }
 
 function void
-game_update_and_render(Game_State *game, OS_Input *input, Renderer_State *renderer, f32 game_update_secs)
+game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f32 game_update_secs)
 {
+  Renderer_State *renderer = &memory->renderer;
   // the player is always at 0th idx
   Entity *player = game->entities;
   
@@ -1706,12 +1683,47 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                                            0, 0, w32_client_rect.right - w32_client_rect.left, w32_client_rect.bottom - w32_client_rect.top,
                                            0, 0, wnd_class.hInstance, &g_application);
     
-    Renderer_State renderer = {0};
+    Game_Memory memory = {0};
+    memory.arena = m_arena_reserve(MB(2));
+    memory.temporary = m_arena_reserve(MB(8));
+    
     dx11_create_swap_chain(&g_application);
     dx11_create_game_main_state(&g_application);
     dx11_create_rasterizer_states(&g_application);
     dx11_create_sampler_states(&g_application);
-    dx11_create_font_atlas(&g_application, &renderer);
+    dx11_create_font_atlas(&g_application, &memory);
+    
+    memory.renderer.filled_quads = (Game_QuadArray)
+    {
+      .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
+      .capacity = Game_MaxQuads,
+      .count = 0,
+      .tex_width = g_application.game_diffse_sheet_width,
+      .tex_height = g_application.game_diffse_sheet_height,
+    };
+    
+    //
+    // NOTE(cj): init debug stuff
+    //
+#if defined(DR_DEBUG)
+    memory.renderer.wire_quads = (Game_QuadArray)
+    {
+      .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
+      .capacity = Game_MaxQuads,
+      .count = 0,
+      .tex_width = g_application.game_diffse_sheet_width,
+      .tex_height = g_application.game_diffse_sheet_height,
+    };
+#endif
+    
+    memory.renderer.glyph_quads = (Game_QuadArray)
+    {
+      .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
+      .capacity = Game_MaxQuads,
+      .count = 0,
+      .tex_width = g_application.font_atlas_sheet_width,
+      .tex_height = g_application.font_atlas_sheet_width,
+    };
     
     if (IsWindow(g_application.window))
     {
@@ -1719,38 +1731,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
       
       Game_State game = {0};
       game_init(&game);
-      
-      renderer.filled_quads = (Game_QuadArray)
-      {
-        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
-        .capacity = Game_MaxQuads,
-        .count = 0,
-        .tex_width = g_application.game_diffse_sheet_width,
-        .tex_height = g_application.game_diffse_sheet_height,
-      };
-      
-      //
-      // NOTE(cj): init debug stuff
-      //
-#if defined(DR_DEBUG)
-      renderer.wire_quads = (Game_QuadArray)
-      {
-        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
-        .capacity = Game_MaxQuads,
-        .count = 0,
-        .tex_width = g_application.game_diffse_sheet_width,
-        .tex_height = g_application.game_diffse_sheet_height,
-      };
-#endif
-      
-      renderer.glyph_quads = (Game_QuadArray)
-      {
-        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
-        .capacity = Game_MaxQuads,
-        .count = 0,
-        .tex_width = g_application.font_atlas_sheet_width,
-        .tex_height = g_application.font_atlas_sheet_width,
-      };
       
       LARGE_INTEGER perf_counter_begin;
       while (1)
@@ -1790,8 +1770,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ExitProcess(0);
         }
         
-        game_update_and_render(&game, input, &renderer, seconds_per_frame);
-        //game_add_tex(&renderer.filled_quads, (v3f){0,0,0}, (v3f){512,512,0}, (v4f){1,1,1,1});
+        game_update_and_render(&game, input, &memory, seconds_per_frame);
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
@@ -1805,7 +1784,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                ++entity_idx)
           {
             Entity *entity = game.entities + entity_idx;
-            game_add_rect(&renderer.wire_quads, entity->p, entity->dims, (v4f){ 0, 0, 1, 1 });
+            game_add_rect(&memory.renderer.wire_quads, entity->p, entity->dims, (v4f){ 0, 0, 1, 1 });
           }
         }
 #endif
@@ -1862,7 +1841,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
         ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
         
-        Game_QuadArray game_quads = renderer.filled_quads;
+        Game_QuadArray game_quads = memory.renderer.filled_quads;
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
@@ -1871,10 +1850,10 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
-        renderer.filled_quads.count = 0;
+        memory.renderer.filled_quads.count = 0;
         
 #if defined(DR_DEBUG)
-        game_quads = renderer.wire_quads;
+        game_quads = memory.renderer.wire_quads;
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_wire_no_cull_ccw);
@@ -1884,10 +1863,11 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
         
-        renderer.wire_quads.count = 0;
+        memory.renderer.wire_quads.count = 0;
 #endif
+        
         ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.font_atlas_sheet_view);
-        game_quads = renderer.glyph_quads;
+        game_quads = memory.renderer.glyph_quads;
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
@@ -1896,7 +1876,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
-        renderer.glyph_quads.count = 0;
+        memory.renderer.glyph_quads.count = 0;
         
         ID3D11DeviceContext_ClearState(g_application.device_context);
         IDXGISwapChain1_Present(g_application.swap_chain, 1, 0);

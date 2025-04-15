@@ -173,7 +173,12 @@ struct Entity
 typedef struct
 {
   M_Arena *arena;
-  
+  M_Arena *temporary;
+  Renderer_State renderer;
+} Game_Memory;
+
+typedef struct
+{
   PRNG32 prng;
   
   u64 entity_count;

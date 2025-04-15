@@ -69,6 +69,14 @@ function M_Arena *m_arena_reserve(u64 reserve_size);
 function void    *m_arena_push(M_Arena *arena, u64 push_size);
 function void     m_arena_pop(M_Arena *arena, u64 pop_size);
 
+typedef struct
+{
+  M_Arena *arena;
+  u64 start_stack_ptr;
+} Temporary_Memory;
+inline function Temporary_Memory begin_temporary_memory(M_Arena *arena);
+inline function void end_temporary_memory(Temporary_Memory temp);
+
 #define str8(s) (String_U8_Const){(u8*)(s),(sizeof(s)-1)}
 typedef struct
 {
