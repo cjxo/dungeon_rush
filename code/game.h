@@ -5,6 +5,13 @@
 
 #define Game_MaxQuads 1024
 #define UI_MaxQuads 512
+
+typedef struct
+{
+  u32 id;
+  s32 width, height;
+} Texture2D;
+
 typedef struct
 {
   v3f p;
@@ -70,19 +77,21 @@ typedef struct
 
 typedef struct
 {
+  // f32 ascent, descent;
+  Glyph_Data glyphs[128];
+} Font;
+
+typedef struct
+{
   // TODO(cj): Should we remove QuadArrays, and pass this struct instead?
   
   // NOTE(cj): "Game Stuff" must be drawn first
   Game_QuadArray filled_quads;
   Game_QuadArray wire_quads;
   
-  // TODO(cj): We should have UI_Quad soon. We have multiple textures
-  // in UI (I think at most two).
   // NOTE(cj): "UI Stuff" must be drawn last
-  Game_QuadArray glyph_quads;
-  
   UI_QuadArray ui_quads;
-  Glyph_Data glyphs[128];
+  Font font;
 } Renderer_State;
 
 inline function Game_Quad *game_acquire_quad(Game_QuadArray *quads);
@@ -92,10 +101,8 @@ inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3
                                                 v2f clip_p, v2f clip_dims, v4f mod,
                                                 b32 flip_horizontal);
 
-// TODO(cj): Remove this soon. This is temporary. This should only be in the 
-// UI render pass
-function void game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour);
 inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
+function void ui_draw_textf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour);
 function UI_Quad *ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims, v4f top_left_c, v4f bottom_left_c, v4f top_right_c, v4f bottom_right_c);
 
 // ----------------------- //

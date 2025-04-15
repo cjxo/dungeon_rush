@@ -37,6 +37,8 @@ StructuredBuffer<UI_Quad> g_instances : register(t0);
 Texture2D<float4> g_texture1          : register(t1);
 Texture2D<float4> g_texture2          : register(t2);
 
+SamplerState g_sampler0 : register(s0);
+
 static const float2 quad_vertices[] = 
 {
 	float2(0, 0),
@@ -61,5 +63,22 @@ VertexShader_Output vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID)
 float4 ps_main(VertexShader_Output ps_inp) : SV_Target
 {
 	float4 final_colour = ps_inp.colour;
+	switch (ps_inp.tex_id)
+	{
+		case 1:
+		{
+			final_colour *= g_texture1.Sample(g_sampler0, ps_inp.uv);
+		} break;
+
+		case 2:
+		{
+			final_colour *= g_texture2.Sample(g_sampler0, ps_inp.uv);
+		} break;
+	}
+
+	if (final_colour.a == 0)
+	{
+		discard;
+	}
 	return(final_colour);
 }

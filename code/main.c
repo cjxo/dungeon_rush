@@ -689,12 +689,12 @@ dx11_create_font_atlas(Application_State *app, Game_Memory *memory)
       
       TextOut(dc, pen_x, pen_y, &c, 1);
       
-      renderer->glyphs[codepoint].advance = advance_x;
-      renderer->glyphs[codepoint].clip_x = (f32)pen_x;
-      renderer->glyphs[codepoint].clip_y = (f32)pen_y;
-      renderer->glyphs[codepoint].clip_width = (f32)(glyph_dims.cx);
-      renderer->glyphs[codepoint].clip_height = (f32)(glyph_dims.cy);
-      renderer->glyphs[codepoint].x_offset = 0;
+      renderer->font.glyphs[codepoint].advance = advance_x;
+      renderer->font.glyphs[codepoint].clip_x = (f32)pen_x;
+      renderer->font.glyphs[codepoint].clip_y = (f32)pen_y;
+      renderer->font.glyphs[codepoint].clip_width = (f32)(glyph_dims.cx);
+      renderer->font.glyphs[codepoint].clip_height = (f32)(glyph_dims.cy);
+      renderer->font.glyphs[codepoint].x_offset = 0;
       
       pen_x += glyph_dims.cx + gap;
     }
@@ -1054,36 +1054,6 @@ game_add_tex_clipped(Game_QuadArray *quads,
   return(result);
 }
 
-// TODO(cj): Remove this soon. This is temporary. This should only be in the 
-// UI render pass (which we havent implemented yet).
-function void
-game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour)
-{
-  v2f pen_p = p;
-  ForLoopU64(char_idx, str.cap)
-  {
-    u8 char_val = str.s[char_idx];
-    Assert((char_val >= 32) && (char_val < 128));
-    
-    Glyph_Data glyph = renderer->glyphs[char_val];
-    if (char_val != ' ')
-    {
-      // TODO(cj): In the UI shader, the Rectangles will have Top Left as an origin.
-      // Hence, remove this offset. I was pulling my hair, assuming that the RECT WAS
-      // TOPLEFT ORIGIN, BUT CENTER ORIGIN IS THE GAME RECT. REMOVING THIS OFFSET WILL
-      // MESS UP THE TEXT RENDERER. TOOK ME 3 HOURS TO FIGURE THIS OUT. THIS SINGLE LINE.
-      // SO REMOVE THIS AND GO TO TOP LEFT FOR UI!!!!!!!!!!!!!!!!!!!!!
-      v3f glyph_p = { pen_p.x + glyph.clip_width*0.5f, pen_p.y + glyph.clip_height*0.5f, 0.0f };
-      v3f glyph_dims = { glyph.clip_width, glyph.clip_height, 0.0f };
-      v2f glyph_clip_p = { glyph.clip_x, glyph.clip_y };
-      game_add_tex_clipped(&renderer->glyph_quads, glyph_p,
-                           glyph_dims, glyph_clip_p,
-                           glyph_dims.xy, colour, 0);
-    }
-    pen_p.x += glyph.advance;
-  }
-}
-
 inline function UI_Quad *
 ui_acquire_quad(UI_QuadArray *quads)
 {
@@ -1104,8 +1074,54 @@ ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
   result->vertex_colours[1] = bottom_left_c;
   result->vertex_colours[2] = top_right_c;
   result->vertex_colours[3] = bottom_right_c;
+  result->tex_id = 0;
   return(result);
 }
+
+inline function UI_Quad *
+ui_add_tex(UI_QuadArray *quads, u32 tex_id, v2f p, v2f dims, v4f colour)
+{
+  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, colour, colour, colour, colour);
+  result->uvs[0] = (v2f){ 0.0f, 0.0f };
+  result->uvs[1] = (v2f){ 0.0f, 1.0f };
+  result->uvs[2] = (v2f){ 1.0f, 0.0f };
+  result->uvs[3] = (v2f){ 1.0f, 1.0f };
+  result->tex_id = tex_id;
+  return(result);
+}
+
+#if 0
+// TODO(cj): Remove this soon. This is temporary. This should only be in the 
+// UI render pass (which we havent implemented yet).
+function void
+ui_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour)
+{
+  v2f pen_p = p;
+  ForLoopU64(char_idx, str.cap)
+  {
+    u8 char_val = str.s[char_idx];
+    Assert((char_val >= 32) && (char_val < 128));
+    
+    Glyph_Data glyph = renderer->glyphs[char_val];
+    if (char_val != ' ')
+    {
+      // TODO(cj): In the UI shader, the Rectangles will have Top Left as an origin.
+      // Hence, remove this offset. I was pulling my hair, assuming that the RECT WAS
+      // TOPLEFT ORIGIN, BUT CENTER ORIGIN IS THE GAME RECT. REMOVING THIS OFFSET WILL
+      // MESS UP THE TEXT RENDERER. TOOK ME 3 HOURS TO FIGURE THIS OUT. THIS SINGLE LINE.
+      // SO REMOVE THIS AND GO TO TOP LEFT FOR UI!!!!!!!!!!!!!!!!!!!!!
+      v3f glyph_p = { pen_p.x + glyph.clip_width*0.5f, pen_p.y + glyph.clip_height*0.5f, 0.0f };
+      v3f glyph_dims = { glyph.clip_width, glyph.clip_height, 0.0f };
+      v2f glyph_clip_p = { glyph.clip_x, glyph.clip_y };
+      ui_add_tex_clipped(&renderer->glyph_quads, glyph_p,
+                         glyph_dims, glyph_clip_p,
+                         glyph_dims.xy, colour, 0);
+    }
+    
+    pen_p.x += glyph.advance;
+  }
+}
+#endif
 
 function Animation_Config
 create_animation_config(f32 duration_secs)
@@ -1702,7 +1718,7 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
     }
   }
   
-  game_draw_textf(renderer, (v2f){0,0}, str8("Hello, World! Ready for text rendering!"), (v4f){1,1,1,1});
+  //ui_draw_textf(renderer->ui_quads, &renderer->font, (v2f){0,0}, str8("Hello, World! Ready for text rendering!"), (v4f){1,1,1,1});
 }
 
 int WINAPI
@@ -1796,15 +1812,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
     };
 #endif
     
-    memory.renderer.glyph_quads = (Game_QuadArray)
-    {
-      .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
-      .capacity = Game_MaxQuads,
-      .count = 0,
-      .tex_width = g_application.font_atlas_sheet_width,
-      .tex_height = g_application.font_atlas_sheet_width,
-    };
-    
     memory.renderer.ui_quads = (UI_QuadArray)
     {
       .quads = M_Arena_PushArray(memory.arena, UI_Quad, UI_MaxQuads),
@@ -1863,6 +1870,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                                        (v2f){256, 256}, (v4f){1,0,0,1},
                                        (v4f){0,1,0,1}, (v4f){0,0,1,1},
                                        (v4f){1,0,1,1});
+        
+        ui_add_tex(&memory.renderer.ui_quads, 2, (v2f){ 700, 0 }, (v2f){512,512}, (v4f){1,1,1,1});
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
@@ -1959,19 +1968,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           
           memory.renderer.wire_quads.count = 0;
 #endif
-          
-          ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.font_atlas_sheet_view);
-          game_quads = memory.renderer.glyph_quads;
-          if (game_quads.count)
-          {
-            ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
-            ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
-            CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
-            ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
-            ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
-          }
-          memory.renderer.glyph_quads.count = 0;
-          
           ID3D11DeviceContext_ClearState(g_application.device_context);
         }
         
