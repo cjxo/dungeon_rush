@@ -4,6 +4,7 @@
 #define GAME_H
 
 #define Game_MaxQuads 1024
+#define UI_MaxQuads 512
 typedef struct
 {
   v3f p;
@@ -32,8 +33,45 @@ typedef struct
   s32 tex_height;
 } Game_QuadArray;
 
+// TODO(cj): Make this nice:
+// 1. Per-vertex roundness (shadows too)
+// 2. Per-border thickness (shadows too)
+// 3. Biased rect size for more "room" for the pixel shader to 
+//    work on
+// 4. 
 typedef struct
 {
+  v2f p;
+  v2f dims;
+  
+  v4f vertex_colours[4];
+  f32 vertex_roundness;
+  f32 border_thickness;
+  
+  v2f shadow_offset;
+  v2f shadow_dim_offset;
+  v4f shadow_colours[4];
+  f32 shadow_roundness;
+  f32 shadow_smoothness;
+  
+  v2f uvs[4];
+  // 1 -> diffuse sheet
+  // 2 -> small font 
+  // anything else -> no texture
+  u32 tex_id;
+} UI_Quad;
+
+typedef struct
+{
+  UI_Quad *quads;
+  u64 capacity;
+  u64 count;
+} UI_QuadArray;
+
+typedef struct
+{
+  // TODO(cj): Should we remove QuadArrays, and pass this struct instead?
+  
   // NOTE(cj): "Game Stuff" must be drawn first
   Game_QuadArray filled_quads;
   Game_QuadArray wire_quads;
@@ -42,6 +80,8 @@ typedef struct
   // in UI (I think at most two).
   // NOTE(cj): "UI Stuff" must be drawn last
   Game_QuadArray glyph_quads;
+  
+  UI_QuadArray ui_quads;
   Glyph_Data glyphs[128];
 } Renderer_State;
 
@@ -55,6 +95,8 @@ inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3
 // TODO(cj): Remove this soon. This is temporary. This should only be in the 
 // UI render pass
 function void game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour);
+inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
+function UI_Quad *ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims, v4f top_left_c, v4f bottom_left_c, v4f top_right_c, v4f bottom_right_c);
 
 // ----------------------- //
 typedef struct

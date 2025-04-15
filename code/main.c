@@ -99,6 +99,11 @@ typedef struct
 
 typedef struct
 {
+  m44 proj;
+} DX11_UI_CBuffer0;
+
+typedef struct
+{
   // window
   HWND window;
   s32 window_width;
@@ -121,6 +126,13 @@ typedef struct
   ID3D11Buffer *sbuffer_main;
   ID3D11ShaderResourceView *sbuffer_view_main;
   
+  // UI main rendering state
+  ID3D11VertexShader *vertex_shader_ui;
+  ID3D11PixelShader *pixel_shader_ui;
+  ID3D11Buffer *cbuffer0_ui;
+  ID3D11Buffer *sbuffer_ui;
+  ID3D11ShaderResourceView *sbuffer_view_ui;
+  
   ID3D11RasterizerState *rasterizer_fill_no_cull_ccw;
   ID3D11RasterizerState *rasterizer_wire_no_cull_ccw;
   
@@ -133,7 +145,6 @@ typedef struct
   s32 game_diffse_sheet_width;
   s32 game_diffse_sheet_height;
   ID3D11ShaderResourceView *game_diffuse_sheet_view;
-  
   s32 font_atlas_sheet_width;
   s32 font_atlas_sheet_height;
   ID3D11ShaderResourceView *font_atlas_sheet_view;
@@ -419,12 +430,57 @@ dx11_create_game_main_state(Application_State *app)
     {
       // NOTE(cj): LOGGING
     }
-#if 0
-    cbuf_desc.ByteWidth = sizeof(DX11_Game_CBuffer1);
-    if (SUCCEEDED(ID3D11Device1_CreateBuffer(g_dx11_dev, &cbuf_desc, 0, &g_dx11_game_cbuffer1)))
+  }
+}
+
+function void
+dx11_create_ui_main_state(Application_State *app)
+{
+  dx11_create_vertex_and_pixel_shader(app->device, 
+                                      L"..\\code\\shaders\\ui-shader.hlsl", "vs_main", "ps_main",
+                                      &app->vertex_shader_ui, &app->pixel_shader_ui);
+  
+  D3D11_BUFFER_DESC cbuf_desc =
+  {
+    .ByteWidth = sizeof(DX11_UI_CBuffer0),
+    .Usage = D3D11_USAGE_DYNAMIC,
+    .BindFlags = D3D11_BIND_CONSTANT_BUFFER,
+    .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+    .MiscFlags = 0,
+    .StructureByteStride = 0,
+  };
+  
+  if (SUCCEEDED(ID3D11Device_CreateBuffer(app->device, &cbuf_desc, 0, &app->cbuffer0_ui)))
+  {
+    D3D11_BUFFER_DESC sbuffer_desc =
     {
+      .ByteWidth = sizeof(UI_Quad) * UI_MaxQuads,
+      .Usage = D3D11_USAGE_DYNAMIC,
+      .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+      .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+      .MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED,
+      .StructureByteStride = sizeof(UI_Quad),
+    };
+    
+    if (SUCCEEDED(ID3D11Device_CreateBuffer(app->device, &sbuffer_desc, 0, &app->sbuffer_ui)))
+    {
+      D3D11_SHADER_RESOURCE_VIEW_DESC sbuffer_srv_desc =
+      {
+        .Format = DXGI_FORMAT_UNKNOWN,
+        .ViewDimension = D3D11_SRV_DIMENSION_BUFFER,
+        .Buffer = { .NumElements = UI_MaxQuads }
+      };
+      
+      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)app->sbuffer_ui, &sbuffer_srv_desc, &app->sbuffer_view_ui);
     }
-#endif
+    else
+    {
+      // NOTE(cj): LOGGING
+    }
+  }
+  else
+  {
+    // NOTE(cj): LOGGING
   }
 }
 
@@ -1026,6 +1082,29 @@ game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour
     }
     pen_p.x += glyph.advance;
   }
+}
+
+inline function UI_Quad *
+ui_acquire_quad(UI_QuadArray *quads)
+{
+  Assert(quads->count < quads->capacity);
+  UI_Quad *result = quads->quads + quads->count++;
+  return(result);
+}
+
+function UI_Quad *
+ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
+                               v4f top_left_c, v4f bottom_left_c,
+                               v4f top_right_c, v4f bottom_right_c)
+{
+  UI_Quad *result = ui_acquire_quad(quads);
+  result->p = p;
+  result->dims = dims;
+  result->vertex_colours[0] = top_left_c;
+  result->vertex_colours[1] = bottom_left_c;
+  result->vertex_colours[2] = top_right_c;
+  result->vertex_colours[3] = bottom_right_c;
+  return(result);
 }
 
 function Animation_Config
@@ -1689,6 +1768,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
     
     dx11_create_swap_chain(&g_application);
     dx11_create_game_main_state(&g_application);
+    dx11_create_ui_main_state(&g_application);
     dx11_create_rasterizer_states(&g_application);
     dx11_create_sampler_states(&g_application);
     dx11_create_font_atlas(&g_application, &memory);
@@ -1723,6 +1803,13 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
       .count = 0,
       .tex_width = g_application.font_atlas_sheet_width,
       .tex_height = g_application.font_atlas_sheet_width,
+    };
+    
+    memory.renderer.ui_quads = (UI_QuadArray)
+    {
+      .quads = M_Arena_PushArray(memory.arena, UI_Quad, UI_MaxQuads),
+      .capacity = UI_MaxQuads,
+      .count = 0,
     };
     
     if (IsWindow(g_application.window))
@@ -1772,6 +1859,11 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         
         game_update_and_render(&game, input, &memory, seconds_per_frame);
         
+        ui_add_quad_per_vertex_colours(&memory.renderer.ui_quads, (v2f){0,0},
+                                       (v2f){256, 256}, (v4f){1,0,0,1},
+                                       (v4f){0,1,0,1}, (v4f){0,0,1,1},
+                                       (v4f){1,0,1,1});
+        
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
         {
@@ -1799,86 +1891,130 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           .MaxDepth = 1,
         };
         
-        Entity *player = game.entities;
-        //
-        // // NOTE(cj): Cbuf0 - proj and cam
-        //
-        f32 half_reso_x = (f32)g_application.reso_width * 0.5f;
-        f32 half_reso_y = (f32)g_application.reso_height * 0.5f;
-        DX11_Game_CBuffer0 new_cbuf0 =
-        {
-          .proj = m44_make_orthographic_z01(-half_reso_x, half_reso_x, half_reso_y, -half_reso_y, -50.0f, 50.0f),
-          .world_to_cam = 
-          {
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            -player->p.x, -player->p.y, -player->p.z, 1,
-          }
-        };
-        
-        D3D11_MAPPED_SUBRESOURCE mapped_subresource;
-        ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
-        CopyMemory(mapped_subresource.pData, &new_cbuf0, sizeof(new_cbuf0));
-        ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0);
-        
         f32 clear_colour[4] = {0}; 
         ID3D11DeviceContext_ClearRenderTargetView(g_application.device_context, g_application.render_target, clear_colour);
         
-        ID3D11DeviceContext_IASetPrimitiveTopology(g_application.device_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        
-        ID3D11DeviceContext_VSSetShader(g_application.device_context, g_application.vertex_shader_main, 0, 0);
-        ID3D11DeviceContext_VSSetConstantBuffers(g_application.device_context, 0, 1, &g_application.cbuffer0_main);
-        ID3D11DeviceContext_VSSetShaderResources(g_application.device_context, 0, 1, &g_application.sbuffer_view_main);
-        
-        ID3D11DeviceContext_RSSetViewports(g_application.device_context, 1, &viewport);
-        
-        ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_main, 0, 0);
-        ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
-        ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
-        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
-        
-        ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
-        ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
-        
-        Game_QuadArray game_quads = memory.renderer.filled_quads;
-        if (game_quads.count)
+        // Game Pass
         {
-          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
-          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
-          CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
-          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
-          ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
-        }
-        memory.renderer.filled_quads.count = 0;
-        
+          Entity *player = game.entities;
+          //
+          // // NOTE(cj): Cbuf0 - proj and cam
+          //
+          f32 half_reso_x = (f32)g_application.reso_width * 0.5f;
+          f32 half_reso_y = (f32)g_application.reso_height * 0.5f;
+          DX11_Game_CBuffer0 new_cbuf0 =
+          {
+            .proj = m44_make_orthographic_z01(-half_reso_x, half_reso_x, half_reso_y, -half_reso_y, -50.0f, 50.0f),
+            .world_to_cam = 
+            {
+              1, 0, 0, 0,
+              0, 1, 0, 0,
+              0, 0, 1, 0,
+              -player->p.x, -player->p.y, -player->p.z, 1,
+            }
+          };
+          
+          ID3D11DeviceContext_IASetPrimitiveTopology(g_application.device_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+          
+          D3D11_MAPPED_SUBRESOURCE mapped_subresource;
+          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+          CopyMemory(mapped_subresource.pData, &new_cbuf0, sizeof(new_cbuf0));
+          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_main, 0);
+          
+          ID3D11DeviceContext_VSSetShader(g_application.device_context, g_application.vertex_shader_main, 0, 0);
+          ID3D11DeviceContext_VSSetConstantBuffers(g_application.device_context, 0, 1, &g_application.cbuffer0_main);
+          ID3D11DeviceContext_VSSetShaderResources(g_application.device_context, 0, 1, &g_application.sbuffer_view_main);
+          
+          ID3D11DeviceContext_RSSetViewports(g_application.device_context, 1, &viewport);
+          
+          ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_main, 0, 0);
+          ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
+          ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
+          ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
+          
+          ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
+          ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
+          
+          Game_QuadArray game_quads = memory.renderer.filled_quads;
+          if (game_quads.count)
+          {
+            ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
+            ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+            CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
+            ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
+            ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+          }
+          memory.renderer.filled_quads.count = 0;
+          
 #if defined(DR_DEBUG)
-        game_quads = memory.renderer.wire_quads;
-        if (game_quads.count)
-        {
-          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_wire_no_cull_ccw);
-          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
-          CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
-          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
-          ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
-        }
-        
-        memory.renderer.wire_quads.count = 0;
+          game_quads = memory.renderer.wire_quads;
+          if (game_quads.count)
+          {
+            ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_wire_no_cull_ccw);
+            ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+            CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
+            ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
+            ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+          }
+          
+          memory.renderer.wire_quads.count = 0;
 #endif
-        
-        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.font_atlas_sheet_view);
-        game_quads = memory.renderer.glyph_quads;
-        if (game_quads.count)
-        {
-          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
-          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
-          CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
-          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
-          ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+          
+          ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.font_atlas_sheet_view);
+          game_quads = memory.renderer.glyph_quads;
+          if (game_quads.count)
+          {
+            ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
+            ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+            CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
+            ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
+            ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+          }
+          memory.renderer.glyph_quads.count = 0;
+          
+          ID3D11DeviceContext_ClearState(g_application.device_context);
         }
-        memory.renderer.glyph_quads.count = 0;
         
-        ID3D11DeviceContext_ClearState(g_application.device_context);
+        // UI Pass
+        {
+          DX11_UI_CBuffer0 new_cbuf0 =
+          {
+            .proj = m44_make_orthographic_z01(0, (f32)g_application.reso_width, 0, (f32)g_application.reso_height, 0.0f, 1.0f),
+          };
+          
+          ID3D11DeviceContext_IASetPrimitiveTopology(g_application.device_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+          D3D11_MAPPED_SUBRESOURCE mapped_subresource;
+          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_ui, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+          CopyMemory(mapped_subresource.pData, &new_cbuf0, sizeof(new_cbuf0));
+          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.cbuffer0_ui, 0);
+          
+          ID3D11DeviceContext_VSSetShader(g_application.device_context, g_application.vertex_shader_ui, 0, 0);
+          ID3D11DeviceContext_VSSetConstantBuffers(g_application.device_context, 0, 1, &g_application.cbuffer0_ui);
+          ID3D11DeviceContext_VSSetShaderResources(g_application.device_context, 0, 1, &g_application.sbuffer_view_ui);
+          
+          ID3D11DeviceContext_RSSetViewports(g_application.device_context, 1, &viewport);
+          
+          ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_ui, 0, 0);
+          ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
+          ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
+          ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 2, 1, &g_application.font_atlas_sheet_view);
+          
+          ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
+          ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
+          
+          if (memory.renderer.ui_quads.count)
+          {
+            ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
+            ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_ui, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+            CopyMemory(mapped_subresource.pData, memory.renderer.ui_quads.quads, sizeof(UI_Quad) * UI_MaxQuads);
+            ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_ui, 0);
+            ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)memory.renderer.ui_quads.count, 0, 0);
+          }
+          
+          memory.renderer.ui_quads.count = 0;
+          ID3D11DeviceContext_ClearState(g_application.device_context);
+        }
+        
         IDXGISwapChain1_Present(g_application.swap_chain, 1, 0);
         
         LARGE_INTEGER perf_counter_end;
