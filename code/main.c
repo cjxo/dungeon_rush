@@ -121,10 +121,6 @@ typedef struct
   ID3D11Buffer *sbuffer_main;
   ID3D11ShaderResourceView *sbuffer_view_main;
   
-  s32 game_diffse_sheet_width;
-  s32 game_diffse_sheet_height;
-  ID3D11ShaderResourceView *game_diffuse_sheet_view;
-  
   ID3D11RasterizerState *rasterizer_fill_no_cull_ccw;
   ID3D11RasterizerState *rasterizer_wire_no_cull_ccw;
   
@@ -133,8 +129,14 @@ typedef struct
   ID3D11BlendState *blend_blend;
   
   HFONT font;
-  // TODO(cj): Remove this after font extraction
-  ID3D11ShaderResourceView *debug_test_font_tex_srv;
+  
+  s32 game_diffse_sheet_width;
+  s32 game_diffse_sheet_height;
+  ID3D11ShaderResourceView *game_diffuse_sheet_view;
+  
+  s32 font_atlas_sheet_width;
+  s32 font_atlas_sheet_height;
+  ID3D11ShaderResourceView *font_atlas_sheet_view;
 } Application_State;
 
 function void
@@ -563,11 +565,11 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/about-text-output
   // - https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-gettextmetrics
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/using-the-font-and-text-output-functions
-  s32 point_size = 16;
+  s32 point_size = 24;
   AddFontResourceExA("..\\res\\fonts\\Pixelify_Sans\\PixelifySans-VariableFont_wght.ttf", FR_PRIVATE, 0);
   app->font = CreateFontA(-(point_size * 96)/72, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-                          DEFAULT_PITCH, "Pixelify Sans");
+                          DEFAULT_PITCH | FF_DONTCARE, "Pixelify Sans");
   
   if (app->font)
   {
@@ -601,6 +603,7 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
       SIZE glyph_dims;
       char c = (char)codepoint;
       GetTextExtentPoint32A(dc, &c, 1, &glyph_dims);
+      glyph_dims.cx = glyph_dims.cx;
       
       if ((pen_x + glyph_dims.cx + gap) >= bitmap_width)
       {
@@ -608,17 +611,73 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
         pen_y += text_metrics.tmHeight + gap;
       }
       
+      if (codepoint == 'e')
+      {
+        int abbb = 0;
+        (void)abbb;
+      }
+      
       // https://learn.microsoft.com/en-us/windows/win32/gdi/character-widths
-      f32 advance_x;
+      ABCFLOAT abc;
+      GetCharABCWidthsFloatA(dc, codepoint, codepoint, &abc);
+      f32 advance_x = (abc.abcfA + abc.abcfB + abc.abcfC);
+      
+#if 1
+      GLYPHMETRICS metrics = {0};
+      MAT2 mat =
+      {
+        { 0, 1 }, { 0, 0 },
+        { 0, 0 }, { 0, 1 },
+      };
+      GetGlyphOutlineA(dc, codepoint, GGO_METRICS, &metrics, 0, 0, &mat);
+#endif
       // is this correcT???????????????? I am not convinced............................
-      GetCharWidthFloatA(dc, codepoint, codepoint, &advance_x);
-      advance_x *= 64.0f;
+      //f32 advance_x;
+      //GetCharWidthFloatA(dc, codepoint, codepoint, &advance_x);
+      //advance_x = (advance_x);
+      
+      TextOut(dc, pen_x, pen_y, &c, 1);
+      
+#if 0
+      s32 min_y = 999999;
+      s32 max_y = -999999;
+      for (s32 y = pen_y; y < (pen_y + glyph_dims.cy); ++y)
+      {
+        for (s32 x = pen_x; x < (pen_x + glyph_dims.cx); ++x)
+        {
+          COLORREF texel = GetPixel(dc, x, y);
+          if (texel)
+          {
+            if (y < min_y)
+            {
+              min_y = y;
+            }
+            
+            if (y > max_y)
+            {
+              max_y = y;
+            }
+          }
+        }
+      }
+      
+      if (max_y >= min_y)
+      {
+        max_y += 1;
+      }
+      else
+      {
+        min_y = pen_y;
+        max_y = pen_y + glyph_dims.cy;
+      }
+#endif
       
       renderer->glyphs[codepoint].advance = advance_x;
       renderer->glyphs[codepoint].clip_x = (f32)pen_x;
       renderer->glyphs[codepoint].clip_y = (f32)pen_y;
-      
-      TextOut(dc, pen_x, pen_y, &c, 1);
+      renderer->glyphs[codepoint].clip_width = (f32)(glyph_dims.cx);
+      renderer->glyphs[codepoint].clip_height = (f32)(glyph_dims.cy);
+      renderer->glyphs[codepoint].x_offset = 0;
       
       pen_x += glyph_dims.cx + gap;
     }
@@ -676,11 +735,14 @@ dx11_create_font_atlas(Application_State *app, Renderer_State *renderer)
       .pSysMem = dest_buffer,
       .SysMemPitch = bitmap_width*4,
     };
+    
     ID3D11Texture2D *atlas_font_tex;
     
     if (SUCCEEDED(ID3D11Device_CreateTexture2D(app->device, &atlas_desc, &atlas_subrec, &atlas_font_tex)))
     {
-      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)atlas_font_tex, 0, &app->debug_test_font_tex_srv);
+      ID3D11Device_CreateShaderResourceView(app->device, (ID3D11Resource *)atlas_font_tex, 0, &app->font_atlas_sheet_view);
+      app->font_atlas_sheet_width = bitmap_width;
+      app->font_atlas_sheet_height = bitmap_height;
       ID3D11Texture2D_Release(atlas_font_tex);
     }
     else
@@ -957,6 +1019,36 @@ game_add_tex_clipped(Game_QuadArray *quads,
   
   result->tex_id = 1;
   return(result);
+}
+
+// TODO(cj): Remove this soon. This is temporary. This should only be in the 
+// UI render pass (which we havent implemented yet).
+function void
+game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour)
+{
+  v2f pen_p = p;
+  ForLoopU64(char_idx, str.cap)
+  {
+    u8 char_val = str.s[char_idx];
+    Assert((char_val >= 32) && (char_val < 128));
+    
+    Glyph_Data glyph = renderer->glyphs[char_val];
+    if (char_val != ' ')
+    {
+      // TODO(cj): In the UI shader, the Rectangles will have Top Left as an origin.
+      // Hence, remove this offset. I was pulling my hair, assuming that the RECT WAS
+      // TOPLEFT ORIGIN, BUT CENTER ORIGIN IS THE GAME RECT. REMOVING THIS OFFSET WILL
+      // MESS UP THE TEXT RENDERER. TOOK ME 3 HOURS TO FIGURE THIS OUT. THIS SINGLE LINE.
+      // SO REMOVE THIS AND GO TO TOP LEFT FOR UI!!!!!!!!!!!!!!!!!!!!!
+      v3f glyph_p = { pen_p.x + glyph.clip_width*0.5f, pen_p.y + glyph.clip_height*0.5f, 0.0f };
+      v3f glyph_dims = { glyph.clip_width, glyph.clip_height, 0.0f };
+      v2f glyph_clip_p = { glyph.clip_x, glyph.clip_y };
+      game_add_tex_clipped(&renderer->glyph_quads, glyph_p,
+                           glyph_dims, glyph_clip_p,
+                           glyph_dims.xy, colour, 0);
+    }
+    pen_p.x += glyph.advance;
+  }
 }
 
 function Animation_Config
@@ -1553,6 +1645,8 @@ game_update_and_render(Game_State *game, OS_Input *input, Renderer_State *render
       InvalidDefaultCase();
     }
   }
+  
+  game_draw_textf(renderer, (v2f){0,0}, str8("Hello, World! Ready for text rendering!"), (v4f){1,1,1,1});
 }
 
 int WINAPI
@@ -1635,7 +1729,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         .tex_height = g_application.game_diffse_sheet_height,
       };
       
-      
       //
       // NOTE(cj): init debug stuff
       //
@@ -1649,6 +1742,15 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         .tex_height = g_application.game_diffse_sheet_height,
       };
 #endif
+      
+      renderer.glyph_quads = (Game_QuadArray)
+      {
+        .quads = M_Arena_PushArray(game.arena, Game_Quad, Game_MaxQuads),
+        .capacity = Game_MaxQuads,
+        .count = 0,
+        .tex_width = g_application.font_atlas_sheet_width,
+        .tex_height = g_application.font_atlas_sheet_width,
+      };
       
       LARGE_INTEGER perf_counter_begin;
       while (1)
@@ -1688,8 +1790,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ExitProcess(0);
         }
         
-        //game_update_and_render(&game, input, &renderer, seconds_per_frame);
-        game_add_tex(&renderer.filled_quads, (v3f){0,0,0}, (v3f){512,512,0}, (v4f){1,1,1,1});
+        game_update_and_render(&game, input, &renderer, seconds_per_frame);
+        //game_add_tex(&renderer.filled_quads, (v3f){0,0,0}, (v3f){512,512,0}, (v4f){1,1,1,1});
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))
@@ -1755,8 +1857,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         ID3D11DeviceContext_PSSetShader(g_application.device_context, g_application.pixel_shader_main, 0, 0);
         ID3D11DeviceContext_PSSetSamplers(g_application.device_context, 0, 1, &g_application.sampler_point_all);
         ID3D11DeviceContext_PSSetConstantBuffers(g_application.device_context, 1, 1, &g_application.cbuffer1_main);
-        //ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
-        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.debug_test_font_tex_srv);
+        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.game_diffuse_sheet_view);
         
         ID3D11DeviceContext_OMSetBlendState(g_application.device_context, g_application.blend_blend, 0, 0xFFFFFFFF);
         ID3D11DeviceContext_OMSetRenderTargets(g_application.device_context, 1, &g_application.render_target, 0);
@@ -1765,7 +1866,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         if (game_quads.count)
         {
           ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
-          
           ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
           CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
@@ -1783,8 +1883,20 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
           ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
           ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
         }
+        
         renderer.wire_quads.count = 0;
 #endif
+        ID3D11DeviceContext_PSSetShaderResources(g_application.device_context, 1, 1, &g_application.font_atlas_sheet_view);
+        game_quads = renderer.glyph_quads;
+        if (game_quads.count)
+        {
+          ID3D11DeviceContext_RSSetState(g_application.device_context, g_application.rasterizer_fill_no_cull_ccw);
+          ID3D11DeviceContext_Map(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_subresource);
+          CopyMemory(mapped_subresource.pData, game_quads.quads, sizeof(Game_Quad) * Game_MaxQuads);
+          ID3D11DeviceContext_Unmap(g_application.device_context, (ID3D11Resource *)g_application.sbuffer_main, 0);
+          ID3D11DeviceContext_DrawInstanced(g_application.device_context, 4, (UINT)game_quads.count, 0, 0);
+        }
+        renderer.glyph_quads.count = 0;
         
         ID3D11DeviceContext_ClearState(g_application.device_context);
         IDXGISwapChain1_Present(g_application.swap_chain, 1, 0);

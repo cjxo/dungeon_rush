@@ -17,6 +17,8 @@ typedef struct
 {
   f32 advance;
   f32 clip_x, clip_y;
+  f32 clip_width, clip_height;
+  f32 x_offset;
 } Glyph_Data;
 
 typedef struct
@@ -32,10 +34,27 @@ typedef struct
 
 typedef struct
 {
+  // NOTE(cj): "Game Stuff" must be drawn first
   Game_QuadArray filled_quads;
   Game_QuadArray wire_quads;
+  
+  // TODO(cj): We should have UI_Quad soon. We have multiple textures
+  // in UI (I think at most two).
+  // NOTE(cj): "UI Stuff" must be drawn last
+  Game_QuadArray glyph_quads;
   Glyph_Data glyphs[128];
 } Renderer_State;
+
+inline function Game_Quad *game_acquire_quad(Game_QuadArray *quads);
+inline function Game_Quad *game_add_rect(Game_QuadArray *quads, v3f p, v3f dims, v4f colour);
+inline function Game_Quad *game_add_tex(Game_QuadArray *quads, v3f p, v3f dims, v4f mod);
+inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3f dims,
+                                                v2f clip_p, v2f clip_dims, v4f mod,
+                                                b32 flip_horizontal);
+
+// TODO(cj): Remove this soon. This is temporary. This should only be in the 
+// UI render pass
+function void game_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour);
 
 // ----------------------- //
 typedef struct

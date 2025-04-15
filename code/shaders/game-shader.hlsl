@@ -71,6 +71,10 @@ ps_main(VertexShader_Output inp) : SV_Target
     sample *= texel;
   }
 
-  if (sample.a == 0) discard;
+  if (sample.a == 0)
+	{
+	  //return float4(0,1,0,1);
+		discard;
+	}
   return(sample);
 }

@@ -69,4 +69,11 @@ function M_Arena *m_arena_reserve(u64 reserve_size);
 function void    *m_arena_push(M_Arena *arena, u64 push_size);
 function void     m_arena_pop(M_Arena *arena, u64 pop_size);
 
+#define str8(s) (String_U8_Const){(u8*)(s),(sizeof(s)-1)}
+typedef struct
+{
+  u8 *s;
+  u64 cap;
+} String_U8_Const;
+
 #endif //BASE_H
