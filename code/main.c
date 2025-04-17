@@ -1067,16 +1067,24 @@ ui_acquire_quad(UI_QuadArray *quads)
 
 function UI_Quad *
 ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
-                               v4f top_left_c, v4f bottom_left_c,
-                               v4f top_right_c, v4f bottom_right_c)
+                               f32 smoothness,
+                               f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
+                               v4f vertex_top_right_c, v4f vertex_bottom_right_c,
+                               f32 border_thickness, v4f border_colour)
 {
   UI_Quad *result = ui_acquire_quad(quads);
   result->p = p;
   result->dims = dims;
-  result->vertex_colours[0] = top_left_c;
-  result->vertex_colours[1] = bottom_left_c;
-  result->vertex_colours[2] = top_right_c;
-  result->vertex_colours[3] = bottom_right_c;
+  result->smoothness = smoothness;
+  result->vertex_colours[0] = vertex_top_left_c;
+  result->vertex_colours[1] = vertex_bottom_left_c;
+  result->vertex_colours[2] = vertex_top_right_c;
+  result->vertex_colours[3] = vertex_bottom_right_c;
+  result->vertex_roundness = vertex_roundness;
+  
+  result->border_colour = border_colour;
+  result->border_thickness = border_thickness;
+  
   result->tex_id = 0;
   return(result);
 }
@@ -1084,7 +1092,7 @@ ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
 inline function UI_Quad *
 ui_add_tex(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v4f colour)
 {
-  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, colour, colour, colour, colour);
+  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, colour, colour, colour, colour, 0.0f, (v4f){0,0,0,0});
   result->uvs[0] = (v2f){ 0.0f, 0.0f };
   result->uvs[1] = (v2f){ 0.0f, 1.0f };
   result->uvs[2] = (v2f){ 1.0f, 0.0f };
@@ -1096,7 +1104,7 @@ ui_add_tex(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v4f colour)
 inline function UI_Quad *
 ui_add_tex_clipped(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims, v4f colour)
 {
-  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, colour, colour, colour, colour);
+  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, colour, colour, colour, colour, 0.0f, (v4f){0,0,0,0});
   
   f32 x_start = clip_p.x / (f32)tex.width;
   f32 x_end = (clip_p.x + clip_dims.x) / (f32)tex.width;
@@ -1113,7 +1121,7 @@ ui_add_tex_clipped(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v2f clip
 }
 
 function void
-ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour)
+ui_add_string(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str)
 {
   v2f pen_p = p;
   ForLoopU64(char_idx, str.cap)
@@ -1887,11 +1895,11 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         game_update_and_render(&game, input, &memory, seconds_per_frame);
         
         ui_add_quad_per_vertex_colours(&memory.renderer.ui_quads, (v2f){0,0},
-                                       (v2f){256, 256}, (v4f){1,0,0,1},
+                                       (v2f){256, 256}, 1.0f, 64.0f, (v4f){1,0,0,1},
                                        (v4f){0,1,0,1}, (v4f){0,0,1,1},
-                                       (v4f){1,0,1,1});
+                                       (v4f){1,0,1,1}, 4.0f, (v4f){ 1.0f, 0.4f, 0.8f, 1.0f });
         
-        ui_add_stringf(&memory.renderer.ui_quads, &memory.renderer.font, (v2f){ 700, 0 }, str8("I am HAPPY this kinda works..."), (v4f){1,1,1,1});
+        ui_add_string(&memory.renderer.ui_quads, &memory.renderer.font, (v2f){ 700, 0 }, (v4f){1,1,1,1}, str8("I am HAPPY this kinda works..."));
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))

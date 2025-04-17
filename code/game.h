@@ -48,9 +48,13 @@ typedef struct
 {
   v2f p;
   v2f dims;
+  f32 rotation_radians;
+  f32 smoothness;
   
   v4f vertex_colours[4];
   f32 vertex_roundness;
+  
+  v4f border_colour;
   f32 border_thickness;
   
   v2f shadow_offset;
@@ -104,8 +108,21 @@ inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3
                                                 b32 flip_horizontal);
 
 inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
-function void ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour);
-function UI_Quad *ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims, v4f top_left_c, v4f bottom_left_c, v4f top_right_c, v4f bottom_right_c);
+function void            ui_add_string(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str);
+function void            ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, v4f colour, char *str, ...);
+function UI_Quad *       ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
+                                                        f32 smoothness,
+                                                        f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
+                                                        v4f vertex_top_right_c, v4f vertex_bottom_right_c,
+                                                        f32 border_thickness, v4f border_colour);
+
+// TODO(cj): Implement this!
+function UI_Quad *       ui_add_quad_shadowed(UI_QuadArray *quads, v2f p, v2f dims,
+                                              f32 smoothness,
+                                              f32 vertex_roundness, v4f colour_per_vertex,
+                                              f32 border_thickness, v4f border_colour,
+                                              v2f shadow_offset, v2f shadow_dim_offset, v4f shadow_colour_per_vertex,
+                                              f32 shadow_roundness, f32 shadow_smoothness);
 
 // ----------------------- //
 typedef struct
