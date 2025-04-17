@@ -142,13 +142,18 @@ typedef struct
   
   HFONT font;
   
+  // NOTE(cj): TextureID: 1
   s32 game_diffse_sheet_width;
   s32 game_diffse_sheet_height;
   ID3D11ShaderResourceView *game_diffuse_sheet_view;
+  
+  // NOTE(cj): TextureID: 2
   s32 font_atlas_sheet_width;
   s32 font_atlas_sheet_height;
   ID3D11ShaderResourceView *font_atlas_sheet_view;
 } Application_State;
+
+global_variable Application_State g_application;
 
 function void
 prevent_dpi_scaling(void)
@@ -988,8 +993,6 @@ end_temporary_memory(Temporary_Memory temp)
   m_arena_pop(temp.arena, temp.arena->stack_ptr - temp.start_stack_ptr);
 }
 
-function Application_State g_application;
-
 inline function Game_Quad *
 game_acquire_quad(Game_QuadArray *quads)
 {
@@ -1017,7 +1020,7 @@ game_add_tex(Game_QuadArray *quads, v3f p, v3f dims, v4f mod)
   result->uvs[1] = (v2f){ 0.0f, 0.0f };
   result->uvs[2] = (v2f){ 1.0f, 1.0f };
   result->uvs[3] = (v2f){ 1.0f, 0.0f };
-  result->tex_id = 1;
+  result->tex_id = quads->tex.id;
   return(result);
 }
 
@@ -1028,12 +1031,13 @@ game_add_tex_clipped(Game_QuadArray *quads,
                      v4f mod,
                      b32 flip_horizontal)
 {
+  Texture2D tex = quads->tex;
   Game_Quad *result = game_add_rect(quads, p, dims, mod);
-  f32 x_start = clip_p.x / (f32)quads->tex_width;
-  f32 x_end = (clip_p.x + clip_dims.x) / (f32)quads->tex_width;
+  f32 x_start = clip_p.x / (f32)tex.width;
+  f32 x_end = (clip_p.x + clip_dims.x) / (f32)tex.width;
   
-  f32 y_start = clip_p.y / (f32)quads->tex_height;
-  f32 y_end = (clip_p.y + clip_dims.y) / (f32)quads->tex_height;
+  f32 y_start = clip_p.y / (f32)tex.height;
+  f32 y_end = (clip_p.y + clip_dims.y) / (f32)tex.height;
   
   if (flip_horizontal)
   {
@@ -1049,8 +1053,7 @@ game_add_tex_clipped(Game_QuadArray *quads,
     result->uvs[2] = (v2f){ x_end, y_end };
     result->uvs[3] = (v2f){ x_end, y_start };
   }
-  
-  result->tex_id = 1;
+  result->tex_id = tex.id;
   return(result);
 }
 
@@ -1079,22 +1082,38 @@ ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
 }
 
 inline function UI_Quad *
-ui_add_tex(UI_QuadArray *quads, u32 tex_id, v2f p, v2f dims, v4f colour)
+ui_add_tex(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v4f colour)
 {
   UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, colour, colour, colour, colour);
   result->uvs[0] = (v2f){ 0.0f, 0.0f };
   result->uvs[1] = (v2f){ 0.0f, 1.0f };
   result->uvs[2] = (v2f){ 1.0f, 0.0f };
   result->uvs[3] = (v2f){ 1.0f, 1.0f };
-  result->tex_id = tex_id;
+  result->tex_id = tex.id;
   return(result);
 }
 
-#if 0
-// TODO(cj): Remove this soon. This is temporary. This should only be in the 
-// UI render pass (which we havent implemented yet).
+inline function UI_Quad *
+ui_add_tex_clipped(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims, v4f colour)
+{
+  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, colour, colour, colour, colour);
+  
+  f32 x_start = clip_p.x / (f32)tex.width;
+  f32 x_end = (clip_p.x + clip_dims.x) / (f32)tex.width;
+  f32 y_start = clip_p.y / (f32)tex.height;
+  f32 y_end = (clip_p.y + clip_dims.y) / (f32)tex.height;
+  
+  result->uvs[0] = (v2f){ x_start, y_start };
+  result->uvs[1] = (v2f){ x_start, y_end };
+  result->uvs[2] = (v2f){ x_end, y_start };
+  result->uvs[3] = (v2f){ x_end, y_end };
+  
+  result->tex_id = tex.id;
+  return(result);
+}
+
 function void
-ui_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour)
+ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour)
 {
   v2f pen_p = p;
   ForLoopU64(char_idx, str.cap)
@@ -1102,26 +1121,20 @@ ui_draw_textf(Renderer_State *renderer, v2f p, String_U8_Const str, v4f colour)
     u8 char_val = str.s[char_idx];
     Assert((char_val >= 32) && (char_val < 128));
     
-    Glyph_Data glyph = renderer->glyphs[char_val];
+    Glyph_Data glyph = font->glyphs[char_val];
     if (char_val != ' ')
     {
-      // TODO(cj): In the UI shader, the Rectangles will have Top Left as an origin.
-      // Hence, remove this offset. I was pulling my hair, assuming that the RECT WAS
-      // TOPLEFT ORIGIN, BUT CENTER ORIGIN IS THE GAME RECT. REMOVING THIS OFFSET WILL
-      // MESS UP THE TEXT RENDERER. TOOK ME 3 HOURS TO FIGURE THIS OUT. THIS SINGLE LINE.
-      // SO REMOVE THIS AND GO TO TOP LEFT FOR UI!!!!!!!!!!!!!!!!!!!!!
-      v3f glyph_p = { pen_p.x + glyph.clip_width*0.5f, pen_p.y + glyph.clip_height*0.5f, 0.0f };
-      v3f glyph_dims = { glyph.clip_width, glyph.clip_height, 0.0f };
+      v2f glyph_p = { pen_p.x, pen_p.y };
+      v2f glyph_dims = { glyph.clip_width, glyph.clip_height, };
       v2f glyph_clip_p = { glyph.clip_x, glyph.clip_y };
-      ui_add_tex_clipped(&renderer->glyph_quads, glyph_p,
+      ui_add_tex_clipped(quads, font->sheet, glyph_p,
                          glyph_dims, glyph_clip_p,
-                         glyph_dims.xy, colour, 0);
+                         glyph_dims, colour);
     }
     
     pen_p.x += glyph.advance;
   }
 }
-#endif
 
 function Animation_Config
 create_animation_config(f32 duration_secs)
@@ -1717,8 +1730,6 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
       InvalidDefaultCase();
     }
   }
-  
-  //ui_draw_textf(renderer->ui_quads, &renderer->font, (v2f){0,0}, str8("Hello, World! Ready for text rendering!"), (v4f){1,1,1,1});
 }
 
 int WINAPI
@@ -1789,13 +1800,23 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
     dx11_create_sampler_states(&g_application);
     dx11_create_font_atlas(&g_application, &memory);
     
+    memory.renderer.game_sheet = (Texture2D)
+    {
+      1, g_application.game_diffse_sheet_width, g_application.game_diffse_sheet_height,
+    };
+    
+    memory.renderer.font_sheet = (Texture2D)
+    {
+      2, g_application.font_atlas_sheet_width, g_application.font_atlas_sheet_height,
+    };
+    
+    memory.renderer.font.sheet = memory.renderer.font_sheet;
     memory.renderer.filled_quads = (Game_QuadArray)
     {
       .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
       .capacity = Game_MaxQuads,
       .count = 0,
-      .tex_width = g_application.game_diffse_sheet_width,
-      .tex_height = g_application.game_diffse_sheet_height,
+      .tex = memory.renderer.game_sheet
     };
     
     //
@@ -1807,8 +1828,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
       .quads = M_Arena_PushArray(memory.arena, Game_Quad, Game_MaxQuads),
       .capacity = Game_MaxQuads,
       .count = 0,
-      .tex_width = g_application.game_diffse_sheet_width,
-      .tex_height = g_application.game_diffse_sheet_height,
+      .tex = memory.renderer.game_sheet,
     };
 #endif
     
@@ -1871,7 +1891,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
                                        (v4f){0,1,0,1}, (v4f){0,0,1,1},
                                        (v4f){1,0,1,1});
         
-        ui_add_tex(&memory.renderer.ui_quads, 2, (v2f){ 700, 0 }, (v2f){512,512}, (v4f){1,1,1,1});
+        ui_add_stringf(&memory.renderer.ui_quads, &memory.renderer.font, (v2f){ 700, 0 }, str8("I am HAPPY this kinda works..."), (v4f){1,1,1,1});
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))

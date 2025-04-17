@@ -80,5 +80,6 @@ float4 ps_main(VertexShader_Output ps_inp) : SV_Target
 	{
 		discard;
 	}
+
 	return(final_colour);
 }

@@ -35,9 +35,7 @@ typedef struct
   u64 capacity;
   u64 count;
   
-  // R_Handle tex;
-  s32 tex_width;
-  s32 tex_height;
+  Texture2D tex;
 } Game_QuadArray;
 
 // TODO(cj): Make this nice:
@@ -79,6 +77,7 @@ typedef struct
 {
   // f32 ascent, descent;
   Glyph_Data glyphs[128];
+  Texture2D sheet;
 } Font;
 
 typedef struct
@@ -92,6 +91,9 @@ typedef struct
   // NOTE(cj): "UI Stuff" must be drawn last
   UI_QuadArray ui_quads;
   Font font;
+  
+  Texture2D game_sheet;
+  Texture2D font_sheet;
 } Renderer_State;
 
 inline function Game_Quad *game_acquire_quad(Game_QuadArray *quads);
@@ -102,7 +104,7 @@ inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3
                                                 b32 flip_horizontal);
 
 inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
-function void ui_draw_textf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour);
+function void ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, String_U8_Const str, v4f colour);
 function UI_Quad *ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims, v4f top_left_c, v4f bottom_left_c, v4f top_right_c, v4f bottom_right_c);
 
 // ----------------------- //

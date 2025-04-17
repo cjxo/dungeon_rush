@@ -18,6 +18,7 @@ typedef s32 b32;
 
 #define Stmnt(s) do{s}while(0)
 #define function static
+#define global_variable static
 
 #if defined(DR_DEBUG)
 # define AssertBreak() __debugbreak()
