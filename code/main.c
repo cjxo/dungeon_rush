@@ -1,7 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
 #define NOMINMAX
-#define _NO_CRT_STDIO_INLINE
 #include <windows.h>
 #include <timeapi.h>
 #include <d3d11.h>
@@ -18,6 +17,7 @@
 #include "mathematical_objects.h"
 #include "game.h"
 
+#include "base.c"
 #include "mathematical_objects.c"
 #include "prng.c"
 
@@ -26,24 +26,6 @@
 #else
 # define DX11_ShaderCompileFlags (D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR|D3DCOMPILE_OPTIMIZATION_LEVEL3)
 #endif
-
-function void *
-os_mem_reserve(u64 reserve_size)
-{
-  return VirtualAlloc(0, reserve_size, MEM_RESERVE, PAGE_NOACCESS);
-}
-
-function b32
-os_mem_commit(void *base, u64 commit_size)
-{
-  return VirtualAlloc(base, commit_size, MEM_COMMIT, PAGE_READWRITE) != 0;
-}
-
-function b32
-os_mem_decommit(void *base, u64 decommit_size)
-{
-  return VirtualFree(base, decommit_size, MEM_DECOMMIT) != 0;
-}
 
 typedef u16 OS_Input_KeyType;
 enum
@@ -901,96 +883,6 @@ w32_window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
   return(result);
 }
 
-function M_Arena *
-m_arena_reserve(u64 reserve_size)
-{
-  M_Arena *result = 0;
-  reserve_size = AlignAToB(reserve_size, 16);
-  void *block = os_mem_reserve(reserve_size);
-  
-  if (block)
-  {
-    u64 new_commit_ptr = AlignAToB(sizeof(M_Arena), M_Arena_DefaultCommit);
-    u64 new_commit_ptr_clamped = Min(new_commit_ptr, reserve_size);
-    
-    os_mem_commit(block, new_commit_ptr_clamped);
-    result = block;
-    result->base = block;
-    result->commit_ptr = new_commit_ptr_clamped;
-    result->stack_ptr = sizeof(M_Arena);
-    result->capacity = reserve_size;
-  }
-  
-  return(result);
-}
-
-function void *
-m_arena_push(M_Arena *arena, u64 push_size)
-{
-  Assert(arena);
-  void *result_block = 0;
-  push_size = AlignAToB(push_size, 16);
-  u64 desired_stack_ptr = arena->stack_ptr + push_size;
-  u64 desired_commit_ptr = arena->commit_ptr;
-  if (desired_stack_ptr <= arena->capacity)
-  {
-    if (desired_stack_ptr >= arena->commit_ptr)
-    {
-      u64 new_commit_ptr = AlignAToB(desired_stack_ptr, M_Arena_DefaultCommit);
-      u64 new_commit_ptr_clamped = Min(new_commit_ptr, arena->capacity);
-      
-      if (new_commit_ptr_clamped > arena->commit_ptr)
-      {
-        os_mem_commit(arena->base + arena->commit_ptr, new_commit_ptr_clamped - arena->commit_ptr);
-        desired_commit_ptr = new_commit_ptr_clamped;
-      }
-    }
-    
-    if (desired_commit_ptr > desired_stack_ptr)
-    {
-      result_block = arena->base + arena->stack_ptr;
-      arena->stack_ptr = desired_stack_ptr;
-      arena->commit_ptr = desired_commit_ptr;
-    }
-  }
-  
-  Assert(result_block);
-  return(result_block);
-}
-
-function void
-m_arena_pop(M_Arena *arena, u64 pop_size)
-{
-  pop_size = AlignAToB(pop_size, 16);
-  Assert(pop_size <= (arena->stack_ptr + sizeof(M_Arena)));
-  arena->stack_ptr -= pop_size;
-  
-  u64 new_commit_ptr = AlignAToB(arena->stack_ptr, M_Arena_DefaultCommit);
-  if (new_commit_ptr < arena->commit_ptr)
-  {
-    os_mem_decommit(arena->base + new_commit_ptr, arena->commit_ptr - new_commit_ptr);
-    arena->commit_ptr = new_commit_ptr;
-  }
-}
-
-inline function Temporary_Memory
-begin_temporary_memory(M_Arena *arena)
-{
-  Assert(!!arena);
-  Temporary_Memory result;
-  result.arena = arena;
-  result.start_stack_ptr = arena->stack_ptr;
-  return(result);
-}
-
-inline function void
-end_temporary_memory(Temporary_Memory temp)
-{
-  Assert(!!temp.arena);
-  Assert(temp.arena->stack_ptr >= temp.start_stack_ptr);
-  m_arena_pop(temp.arena, temp.arena->stack_ptr - temp.start_stack_ptr);
-}
-
 inline function Game_Quad *
 game_acquire_quad(Game_QuadArray *quads)
 {
@@ -1145,12 +1037,20 @@ ui_add_tex_clipped(UI_QuadArray *quads, Texture2D tex, v2f p, v2f dims, v2f clip
 }
 
 function void
-ui_add_string(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str)
+ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str, ...)
 {
+  M_Arena *temp_arena = get_transient_arena(0, 0);
+  Temporary_Memory temp = begin_temporary_memory(temp_arena);
+  
+  va_list args;
+  va_start(args, str);
+  String_U8_Const format = str8_format_va(temp_arena, str, args);
+  va_end(args);
+  
   v2f pen_p = p;
-  ForLoopU64(char_idx, str.cap)
+  ForLoopU64(char_idx, format.cap)
   {
-    u8 char_val = str.s[char_idx];
+    u8 char_val = format.s[char_idx];
     Assert((char_val >= 32) && (char_val < 128));
     
     Glyph_Data glyph = font->glyphs[char_val];
@@ -1166,6 +1066,8 @@ ui_add_string(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Cons
     
     pen_p.x += glyph.advance;
   }
+  
+  end_temporary_memory(temp);
 }
 
 function Animation_Config
@@ -1762,6 +1664,11 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
       InvalidDefaultCase();
     }
   }
+  
+  ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){0,0}, (v4f){1,1,1,1}, str8("Wave Number: %u"), game->wave_number);
+  ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){0,24}, (v4f){1,1,1,1}, str8("Spawned Enemies: %u"), game->enemies_to_spawn);
+  ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){0,48}, (v4f){1,1,1,1}, str8("Player Pos: <%.2f, %.2f>"), player->p.x, player->p.y);
+  ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){0,72}, (v4f){1,1,1,1}, str8("Player Health: %u / %u"), (u32)player->current_hp, (u32)player->max_hp);
 }
 
 int WINAPI
@@ -1918,21 +1825,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         }
         
         game_update_and_render(&game, input, &memory, seconds_per_frame);
-        
-        ui_add_quad_per_vertex_colours(&memory.renderer.ui_quads, (v2f){20,20},
-                                       (v2f){128, 128}, 16.0f, 32.0f, (v4f){1,0,0,1},
-                                       (v4f){0,1,0,1}, (v4f){0,0,1,1},
-                                       (v4f){1,0,1,1}, 4.0f, (v4f){ 1.0f, 0.4f, 0.8f, 1.0f });
-        
-        ui_add_quad_shadowed(&memory.renderer.ui_quads, (v2f){ 20, 164 }, (v2f){ 128, 128 }, 1.0f,
-                             16.0f, (v4f){ 0.8f, 0.3f, 0.3f, 1.0f },
-                             1.0f, (v4f){ 0.2f, 0.4f, 0.8f, 1.0f },
-                             (v2f){8.0f, 8.0f}, // shadow off
-                             (v2f){16.0f, 16.0f}, // shadow dims off
-                             (v4f){0.4f, 0.2f, 0.2f, 1.0f}, // shadow colour
-                             16.0f);
-        
-        ui_add_string(&memory.renderer.ui_quads, &memory.renderer.font, (v2f){ 700, 0 }, (v4f){1,1,1,1}, str8("I am HAPPY this kinda works..."));
         
 #if defined(DR_DEBUG)
         if (OS_KeyReleased(input, OS_Input_KeyType_P))

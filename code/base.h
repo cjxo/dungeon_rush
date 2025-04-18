@@ -19,6 +19,7 @@ typedef s32 b32;
 #define Stmnt(s) do{s}while(0)
 #define function static
 #define global_variable static
+#define thread_variable __declspec(thread)
 
 #if defined(DR_DEBUG)
 # define AssertBreak() __debugbreak()
@@ -78,11 +79,16 @@ typedef struct
 inline function Temporary_Memory begin_temporary_memory(M_Arena *arena);
 inline function void end_temporary_memory(Temporary_Memory temp);
 
-#define str8(s) (String_U8_Const){(u8*)(s),(sizeof(s)-1)}
+function M_Arena *get_transient_arena(M_Arena **conflict, u64 count);
+
+#define str8(s) (String_U8_Const){(u8*)(s),(sizeof(s)-1),(sizeof(s)-1)}
 typedef struct
 {
   u8 *s;
   u64 cap;
+  u64 count;
 } String_U8_Const;
+
+function String_U8_Const str8_format_va(M_Arena *arena, String_U8_Const str, va_list args0);
 
 #endif //BASE_H

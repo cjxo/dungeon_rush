@@ -107,8 +107,7 @@ inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3
                                                 b32 flip_horizontal);
 
 inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
-function void            ui_add_string(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str);
-function void            ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, v4f colour, char *str, ...);
+function void            ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str, ...);
 function UI_Quad *       ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
                                                         f32 smoothness,
                                                         f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
