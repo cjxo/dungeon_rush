@@ -541,7 +541,7 @@ dx11_create_sampler_states(Application_State *app)
 function void
 dx11_create_blend_states(Application_State *app)
 {
-  D3D11_BLEND_DESC blend_desc;
+  D3D11_BLEND_DESC blend_desc = {0};
   blend_desc.AlphaToCoverageEnable = FALSE;
   blend_desc.IndependentBlendEnable = FALSE;
   blend_desc.RenderTarget[0].BlendEnable = TRUE;
@@ -549,9 +549,7 @@ dx11_create_blend_states(Application_State *app)
   blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
   blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
   blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
-  //blend_desc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_INV_DEST_ALPHA;
   blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-  //blend_desc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_ONE;
   blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
   blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
   
@@ -1062,6 +1060,7 @@ ui_acquire_quad(UI_QuadArray *quads)
 {
   Assert(quads->count < quads->capacity);
   UI_Quad *result = quads->quads + quads->count++;
+  ClearStructP(result);
   return(result);
 }
 
@@ -1086,6 +1085,31 @@ ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
   result->border_thickness = border_thickness;
   
   result->tex_id = 0;
+  return(result);
+}
+
+function UI_Quad *
+ui_add_quad_shadowed(UI_QuadArray *quads, v2f p, v2f dims,
+                     f32 smoothness,
+                     f32 vertex_roundness, v4f colour_per_vertex,
+                     f32 border_thickness, v4f border_colour,
+                     v2f shadow_offset, v2f shadow_dims_offset,
+                     v4f shadow_colour_per_vertex,
+                     f32 shadow_smoothness)
+{
+  UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, smoothness, vertex_roundness, colour_per_vertex, colour_per_vertex,
+                                                   colour_per_vertex, colour_per_vertex,
+                                                   border_thickness, border_colour);
+  if (shadow_dims_offset.x < 0.0f) shadow_dims_offset.x = 0.0f;
+  if (shadow_dims_offset.y < 0.0f) shadow_dims_offset.y = 0.0f;
+  
+  result->shadow_offset = shadow_offset;
+  result->shadow_dims_offset = shadow_dims_offset;
+  result->shadow_colours[0] = shadow_colour_per_vertex;
+  result->shadow_colours[1] = shadow_colour_per_vertex;
+  result->shadow_colours[2] = shadow_colour_per_vertex;
+  result->shadow_colours[3] = shadow_colour_per_vertex;
+  result->shadow_smoothness = shadow_smoothness;
   return(result);
 }
 
@@ -1805,6 +1829,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
     dx11_create_game_main_state(&g_application);
     dx11_create_ui_main_state(&g_application);
     dx11_create_rasterizer_states(&g_application);
+    dx11_create_blend_states(&g_application);
     dx11_create_sampler_states(&g_application);
     dx11_create_font_atlas(&g_application, &memory);
     
@@ -1894,10 +1919,18 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
         
         game_update_and_render(&game, input, &memory, seconds_per_frame);
         
-        ui_add_quad_per_vertex_colours(&memory.renderer.ui_quads, (v2f){0,0},
-                                       (v2f){256, 256}, 1.0f, 64.0f, (v4f){1,0,0,1},
+        ui_add_quad_per_vertex_colours(&memory.renderer.ui_quads, (v2f){20,20},
+                                       (v2f){128, 128}, 16.0f, 32.0f, (v4f){1,0,0,1},
                                        (v4f){0,1,0,1}, (v4f){0,0,1,1},
                                        (v4f){1,0,1,1}, 4.0f, (v4f){ 1.0f, 0.4f, 0.8f, 1.0f });
+        
+        ui_add_quad_shadowed(&memory.renderer.ui_quads, (v2f){ 20, 164 }, (v2f){ 128, 128 }, 1.0f,
+                             16.0f, (v4f){ 0.8f, 0.3f, 0.3f, 1.0f },
+                             1.0f, (v4f){ 0.2f, 0.4f, 0.8f, 1.0f },
+                             (v2f){8.0f, 8.0f}, // shadow off
+                             (v2f){16.0f, 16.0f}, // shadow dims off
+                             (v4f){0.4f, 0.2f, 0.2f, 1.0f}, // shadow colour
+                             16.0f);
         
         ui_add_string(&memory.renderer.ui_quads, &memory.renderer.font, (v2f){ 700, 0 }, (v4f){1,1,1,1}, str8("I am HAPPY this kinda works..."));
         

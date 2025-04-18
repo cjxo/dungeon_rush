@@ -58,9 +58,8 @@ typedef struct
   f32 border_thickness;
   
   v2f shadow_offset;
-  v2f shadow_dim_offset;
+  v2f shadow_dims_offset;
   v4f shadow_colours[4];
-  f32 shadow_roundness;
   f32 shadow_smoothness;
   
   v2f uvs[4];
@@ -121,8 +120,10 @@ function UI_Quad *       ui_add_quad_shadowed(UI_QuadArray *quads, v2f p, v2f di
                                               f32 smoothness,
                                               f32 vertex_roundness, v4f colour_per_vertex,
                                               f32 border_thickness, v4f border_colour,
-                                              v2f shadow_offset, v2f shadow_dim_offset, v4f shadow_colour_per_vertex,
-                                              f32 shadow_roundness, f32 shadow_smoothness);
+                                              v2f shadow_offset,
+                                              v2f shadow_dims_offset,
+                                              v4f shadow_colour_per_vertex,
+                                              f32 shadow_smoothness);
 
 // ----------------------- //
 typedef struct
