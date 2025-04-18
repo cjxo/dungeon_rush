@@ -100,7 +100,7 @@ get_transient_arena(M_Arena **conflict, u64 count)
   {
     for (u64 arena_idx = 0; arena_idx < MaxTransientArena(); ++arena_idx)
     {
-      g_transient_arena[arena_idx] = m_arena_reserve(KB(512));
+      g_transient_arena[arena_idx] = m_arena_reserve(MB(8));
     }
   }
   

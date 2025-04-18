@@ -3,126 +3,29 @@
 #ifndef GAME_H
 #define GAME_H
 
-#define Game_MaxQuads 1024
-#define UI_MaxQuads 512
+inline function R_Game_Quad *game_acquire_quad(R_Game_QuadArray *quads);
+inline function R_Game_Quad *game_add_rect(R_Game_QuadArray *quads, v3f p, v3f dims, v4f colour);
+inline function R_Game_Quad *game_add_tex(R_Game_QuadArray *quads, v3f p, v3f dims, v4f mod);
+inline function R_Game_Quad *game_add_tex_clipped(R_Game_QuadArray *quads, v3f p, v3f dims,
+                                                  v2f clip_p, v2f clip_dims, v4f mod,
+                                                  b32 flip_horizontal);
 
-typedef struct
-{
-  u32 id;
-  s32 width, height;
-} Texture2D;
+inline function R_UI_Quad *ui_acquire_quad(R_UI_QuadArray *quads);
+function void              ui_add_stringf(R_UI_QuadArray *quads, R_Font *font, v2f p, v4f colour, String_U8_Const str, ...);
+function R_UI_Quad *       ui_add_quad_per_vertex_colours(R_UI_QuadArray *quads, v2f p, v2f dims,
+                                                          f32 smoothness,
+                                                          f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
+                                                          v4f vertex_top_right_c, v4f vertex_bottom_right_c,
+                                                          f32 border_thickness, v4f border_colour);
 
-typedef struct
-{
-  v3f p;
-  v3f dims;
-  v4f colour;
-  v2f uvs[4];
-  u32 tex_id;
-} Game_Quad;
-
-typedef struct
-{
-  f32 advance;
-  f32 clip_x, clip_y;
-  f32 clip_width, clip_height;
-  f32 x_offset;
-} Glyph_Data;
-
-typedef struct
-{
-  Game_Quad *quads;
-  u64 capacity;
-  u64 count;
-  
-  Texture2D tex;
-} Game_QuadArray;
-
-// TODO(cj): Make this nice:
-// 1. Per-vertex roundness (shadows too)
-// 2. Per-border thickness (shadows too)
-// 3. Biased rect size for more "room" for the pixel shader to 
-//    work on
-// 4. 
-typedef struct
-{
-  v2f p;
-  v2f dims;
-  f32 rotation_radians;
-  f32 smoothness;
-  
-  v4f vertex_colours[4];
-  f32 vertex_roundness;
-  
-  v4f border_colour;
-  f32 border_thickness;
-  
-  v2f shadow_offset;
-  v2f shadow_dims_offset;
-  v4f shadow_colours[4];
-  f32 shadow_smoothness;
-  
-  v2f uvs[4];
-  // 1 -> diffuse sheet
-  // 2 -> small font 
-  // anything else -> no texture
-  u32 tex_id;
-} UI_Quad;
-
-typedef struct
-{
-  UI_Quad *quads;
-  u64 capacity;
-  u64 count;
-} UI_QuadArray;
-
-typedef struct
-{
-  // f32 ascent, descent;
-  Glyph_Data glyphs[128];
-  Texture2D sheet;
-} Font;
-
-typedef struct
-{
-  // TODO(cj): Should we remove QuadArrays, and pass this struct instead?
-  
-  // NOTE(cj): "Game Stuff" must be drawn first
-  Game_QuadArray filled_quads;
-  Game_QuadArray wire_quads;
-  
-  // NOTE(cj): "UI Stuff" must be drawn last
-  UI_QuadArray ui_quads;
-  Font font;
-  
-  Texture2D game_sheet;
-  Texture2D font_sheet;
-} Renderer_State;
-
-inline function Game_Quad *game_acquire_quad(Game_QuadArray *quads);
-inline function Game_Quad *game_add_rect(Game_QuadArray *quads, v3f p, v3f dims, v4f colour);
-inline function Game_Quad *game_add_tex(Game_QuadArray *quads, v3f p, v3f dims, v4f mod);
-inline function Game_Quad *game_add_tex_clipped(Game_QuadArray *quads, v3f p, v3f dims,
-                                                v2f clip_p, v2f clip_dims, v4f mod,
-                                                b32 flip_horizontal);
-
-inline function UI_Quad *ui_acquire_quad(UI_QuadArray *quads);
-function void            ui_add_stringf(UI_QuadArray *quads, Font *font, v2f p, v4f colour, String_U8_Const str, ...);
-function UI_Quad *       ui_add_quad_per_vertex_colours(UI_QuadArray *quads, v2f p, v2f dims,
-                                                        f32 smoothness,
-                                                        f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
-                                                        v4f vertex_top_right_c, v4f vertex_bottom_right_c,
-                                                        f32 border_thickness, v4f border_colour);
-
-// TODO(cj): Implement this!
-function UI_Quad *       ui_add_quad_shadowed(UI_QuadArray *quads, v2f p, v2f dims,
-                                              f32 smoothness,
-                                              f32 vertex_roundness, v4f colour_per_vertex,
-                                              f32 border_thickness, v4f border_colour,
-                                              v2f shadow_offset,
-                                              v2f shadow_dims_offset,
-                                              v4f shadow_colour_per_vertex,
-                                              f32 shadow_smoothness);
+function R_UI_Quad *       ui_add_quad_shadowed(R_UI_QuadArray *quads, v2f p, v2f dims,
+                                                f32 smoothness,
+                                                f32 vertex_roundness, v4f colour_per_vertex,
+                                                f32 border_thickness, v4f border_colour,
+                                                v2f shadow_offset,
+                                                v2f shadow_dims_offset,
+                                                v4f shadow_colour_per_vertex,
+                                                f32 shadow_smoothness);
 
 // ----------------------- //
 typedef struct
@@ -241,8 +144,7 @@ struct Entity
 typedef struct
 {
   M_Arena *arena;
-  M_Arena *temporary;
-  Renderer_State renderer;
+  R_InputForRendering *renderer;
 } Game_Memory;
 
 typedef struct
