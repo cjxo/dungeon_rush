@@ -490,7 +490,7 @@ dx11_create_font_atlas(R_State *state, R_InputForRendering *renderer)
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/about-text-output
   // - https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-gettextmetrics
   // - https://learn.microsoft.com/en-us/windows/win32/gdi/using-the-font-and-text-output-functions
-  s32 point_size = 24;
+  s32 point_size = 16;
   AddFontResourceExA("..\\res\\fonts\\Pixelify_Sans\\PixelifySans-VariableFont_wght.ttf", FR_PRIVATE, 0);
   state->font = CreateFontA(-(point_size * 96)/72, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
@@ -518,6 +518,9 @@ dx11_create_font_atlas(R_State *state, R_InputForRendering *renderer)
     
     TEXTMETRIC text_metrics;
     GetTextMetrics(dc, &text_metrics);
+    
+    renderer->font.ascent = (f32)text_metrics.tmAscent;
+    renderer->font.descent = (f32)text_metrics.tmDescent;
     
     s32 gap = 4;
     s32 pen_x = gap;

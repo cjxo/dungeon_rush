@@ -9,10 +9,11 @@ struct UI_Quad
 	float2 dims;
 	float rotation_radians;
 	float smoothness;
-  
+
 	float4 vertex_colours[4];
 	float vertex_roundness;
 
+	uint border_only;
 	float4 border_colour;
 	float border_thickness;
   
@@ -44,8 +45,9 @@ struct VertexShader_Output
 	float shadow_smoothness                 : Shadow_Smoothness;
 	float4 shadow_colour                    : Shadow_Colour;
 
-	float4 border_colour   : Border_Colour;
-	float border_thickness : Border_Thickness;
+	nointerpolation uint border_only       : Border_Only;
+	float4 border_colour                   : Border_Colour;
+	float border_thickness                 : Border_Thickness;
 
 	float2 uv         : Tex_UV;
 	uint tex_id       : Tex_ID;
@@ -97,6 +99,7 @@ VertexShader_Output vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID)
 	result.shadow_smoothness = quad.shadow_smoothness;
 	result.shadow_colour = quad.shadow_colours[vid];
 
+	result.border_only = quad.border_only;
 	result.border_colour = quad.border_colour;
 	result.border_thickness = quad.border_thickness;
 	
@@ -108,7 +111,7 @@ VertexShader_Output vs_main(uint vid : SV_VertexID, uint iid : SV_InstanceID)
 float sdf_rect(float2 p, float2 rect_c, float2 rect_half_dims, float radius)
 {
 	float2 p_in_c = abs(p - rect_c);
-#if 0
+#if 1
 	float x_dist = p_in_c.x - rect_half_dims.x + radius;
 	float y_dist = p_in_c.y - rect_half_dims.y + radius;
 	float c_dist = length(p_in_c - rect_half_dims + radius);
@@ -179,27 +182,43 @@ float4 ps_main(VertexShader_Output ps_inp) : SV_Target
 	float4 border_colour = ps_inp.border_colour;
 	float border_thickness = ps_inp.border_thickness;
 	
-	float rect_shadow_dist = sdf_rect(sample_p, shadow_c, shadow_half_dims, vertex_roundness + shadow_diff_length);
-	float rect_shadow_alpha = get_fill_fact(rect_shadow_dist, shadow_smoothness);
-	final_colour = put_a_ontop_of_b(apply_mask(shadow_colour, rect_shadow_alpha), final_colour);
-
-	float adjusted_vertex_roundness = vertex_roundness;
-	float2 adjusted_half_dims = rect_half_dims;
-	if (border_thickness > 0)
+	if (ps_inp.border_only)
 	{
 		float rect_border_dist = sdf_rect(sample_p, rect_c, rect_half_dims, vertex_roundness);
 		float rect_border_alpha = get_fill_fact(rect_border_dist, smoothness);
 		final_colour = put_a_ontop_of_b(apply_mask(border_colour, rect_border_alpha), final_colour);
-
+		
 		float border_length = length(float2(border_thickness, border_thickness));
-		adjusted_vertex_roundness = adjusted_vertex_roundness - border_length;
-		adjusted_half_dims = adjusted_half_dims - border_length;
-	}
-	
-	float rect_dist = sdf_rect(sample_p, rect_c, adjusted_half_dims, adjusted_vertex_roundness);
-	float rect_alpha = get_fill_fact(rect_dist, smoothness);
-	final_colour = put_a_ontop_of_b(apply_mask(rect_colour, rect_alpha), final_colour);
+		float adjusted_vertex_roundness = vertex_roundness - border_length;
+		float2 adjusted_half_dims = rect_half_dims - border_length;
 
+		float rect_dist = sdf_rect(sample_p, rect_c, adjusted_half_dims, adjusted_vertex_roundness);
+		float rect_alpha = get_fill_fact(-rect_dist, smoothness);
+		final_colour = apply_mask(final_colour, rect_alpha);
+	}
+	else
+	{
+		float rect_shadow_dist = sdf_rect(sample_p, shadow_c, shadow_half_dims, vertex_roundness + shadow_diff_length);
+		float rect_shadow_alpha = get_fill_fact(rect_shadow_dist, shadow_smoothness);
+		final_colour = put_a_ontop_of_b(apply_mask(shadow_colour, rect_shadow_alpha), final_colour);
+	
+		float adjusted_vertex_roundness = vertex_roundness;
+		float2 adjusted_half_dims = rect_half_dims;
+		if (border_thickness > 0)
+		{
+			float rect_border_dist = sdf_rect(sample_p, rect_c, rect_half_dims, vertex_roundness);
+			float rect_border_alpha = get_fill_fact(rect_border_dist, smoothness);
+			final_colour = put_a_ontop_of_b(apply_mask(border_colour, rect_border_alpha), final_colour);
+
+			float border_length = length(float2(border_thickness, border_thickness));
+			adjusted_vertex_roundness = adjusted_vertex_roundness - border_length;
+			adjusted_half_dims = adjusted_half_dims - border_length;
+		}
+	
+		float rect_dist = sdf_rect(sample_p, rect_c, adjusted_half_dims, adjusted_vertex_roundness);
+		float rect_alpha = get_fill_fact(rect_dist, smoothness);
+		final_colour = put_a_ontop_of_b(apply_mask(rect_colour, rect_alpha), final_colour);
+	}
 	if (final_colour.a == 0) discard;
 	return(final_colour);
 }

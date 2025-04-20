@@ -19,6 +19,25 @@ close_enough_zero_f32(f32 a, f32 tolerance)
   return(absolute_value_f32(a) <= tolerance);
 }
 
+inline function v2f
+v2f_make(f32 x, f32 y)
+{
+  v2f result;
+  result.x = x;
+  result.y = y;
+  return(result);
+}
+
+inline function v3f
+v3f_make(f32 x, f32 y, f32 z)
+{
+  v3f result;
+  result.x = x;
+  result.y = y;
+  result.z = z;
+  return(result);
+}
+
 inline function v3f
 v3f_add(v3f a, v3f b)
 {
@@ -74,6 +93,17 @@ v3f_sub_and_normalize_or_zero(v3f a, v3f b)
     result.z /= length;
   }
   
+  return(result);
+}
+
+inline function v4f
+v4f_make(f32 x, f32 y, f32 z, f32 w)
+{
+  v4f result;
+  result.x = x;
+  result.y = y;
+  result.z = z;
+  result.w = w;
   return(result);
 }
 

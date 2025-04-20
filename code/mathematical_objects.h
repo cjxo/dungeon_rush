@@ -15,6 +15,8 @@ typedef union
   f32 v[2];
 } v2f;
 
+inline function v2f v2f_make(f32 x, f32 y);
+
 typedef union
 {
   struct
@@ -29,6 +31,7 @@ typedef union
   f32 v[3];
 } v3f;
 
+inline function v3f v3f_make(f32 x, f32 y, f32 z);
 inline function v3f v3f_add(v3f a, v3f b);
 inline function v3f v3f_sub(v3f a, v3f b);
 inline function void v3f_add_eq(v3f *a, v3f b);
@@ -43,6 +46,8 @@ typedef union
   f32 v[4];
 } v4f;
 
+#define rgba(r,g,b,a) v4f_make((f32)(r)/255.0f,(f32)(g)/255.0f,(f32)(b)/255.0f,(a))
+inline function v4f v4f_make(f32 x, f32 y, f32 z, f32 w);
 typedef union
 {
   struct

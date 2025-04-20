@@ -38,6 +38,7 @@ typedef struct
   v4f vertex_colours[4];
   f32 vertex_roundness;
   
+  u32 border_only;
   v4f border_colour;
   f32 border_thickness;
   
@@ -70,7 +71,7 @@ typedef struct
 
 typedef struct
 {
-  // f32 ascent, descent;
+  f32 ascent, descent;
   R_GlyphData glyphs[128];
   R_Texture2D sheet;
 } R_Font;
