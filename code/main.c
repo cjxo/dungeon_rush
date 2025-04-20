@@ -17,6 +17,7 @@
 #include "prng.h"
 #include "mathematical_objects.h"
 #include "renderer.h"
+#include "ui.h"
 #include "game.h"
 
 #include "base.c"
@@ -24,6 +25,7 @@
 #include "mathematical_objects.c"
 #include "renderer.c"
 #include "prng.c"
+#include "ui.c"
 
 inline function R_Game_Quad *
 game_acquire_quad(R_Game_QuadArray *quads)
@@ -87,198 +89,6 @@ game_add_tex_clipped(R_Game_QuadArray *quads,
   }
   result->tex_id = tex.id;
   return(result);
-}
-
-inline function R_UI_Quad *
-ui_acquire_quad(R_UI_QuadArray *quads)
-{
-  Assert(quads->count < quads->capacity);
-  R_UI_Quad *result = quads->quads + quads->count++;
-  ClearStructP(result);
-  return(result);
-}
-
-function R_UI_Quad *
-ui_add_quad_per_vertex_colours(R_UI_QuadArray *quads, v2f p, v2f dims,
-                               f32 smoothness,
-                               f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
-                               v4f vertex_top_right_c, v4f vertex_bottom_right_c,
-                               f32 border_thickness, v4f border_colour)
-{
-  R_UI_Quad *result = ui_acquire_quad(quads);
-  result->p = p;
-  result->dims = dims;
-  result->smoothness = smoothness;
-  result->vertex_colours[0] = vertex_top_left_c;
-  result->vertex_colours[1] = vertex_bottom_left_c;
-  result->vertex_colours[2] = vertex_top_right_c;
-  result->vertex_colours[3] = vertex_bottom_right_c;
-  result->vertex_roundness = vertex_roundness;
-  
-  result->border_colour = border_colour;
-  result->border_thickness = border_thickness;
-  
-  result->tex_id = 0;
-  return(result);
-}
-
-function R_UI_Quad *
-ui_add_quad(R_UI_QuadArray *quads, v2f p, v2f dims,
-            f32 smoothness, f32 vertex_roundness, v4f vertex_colours,
-            f32 border_thickness, v4f border_colour)
-{
-  return ui_add_quad_per_vertex_colours(quads, p, dims, smoothness, vertex_roundness,
-                                        vertex_colours, vertex_colours, vertex_colours, 
-                                        vertex_colours, border_thickness, border_colour);
-}
-
-function R_UI_Quad *
-ui_add_quad_shadowed(R_UI_QuadArray *quads, v2f p, v2f dims,
-                     f32 smoothness,
-                     f32 vertex_roundness, v4f colour_per_vertex,
-                     f32 border_thickness, v4f border_colour,
-                     v2f shadow_offset, v2f shadow_dims_offset,
-                     v4f shadow_colour_per_vertex,
-                     f32 shadow_smoothness)
-{
-  R_UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, smoothness, vertex_roundness, colour_per_vertex, colour_per_vertex,
-                                                     colour_per_vertex, colour_per_vertex,
-                                                     border_thickness, border_colour);
-  if (shadow_dims_offset.x < 0.0f) shadow_dims_offset.x = 0.0f;
-  if (shadow_dims_offset.y < 0.0f) shadow_dims_offset.y = 0.0f;
-  
-  result->shadow_offset = shadow_offset;
-  result->shadow_dims_offset = shadow_dims_offset;
-  result->shadow_colours[0] = shadow_colour_per_vertex;
-  result->shadow_colours[1] = shadow_colour_per_vertex;
-  result->shadow_colours[2] = shadow_colour_per_vertex;
-  result->shadow_colours[3] = shadow_colour_per_vertex;
-  result->shadow_smoothness = shadow_smoothness;
-  return(result);
-}
-
-inline function R_UI_Quad *
-ui_add_tex(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v4f colour)
-{
-  R_UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, colour, colour, colour, colour, 0.0f, (v4f){0,0,0,0});
-  result->uvs[0] = (v2f){ 0.0f, 0.0f };
-  result->uvs[1] = (v2f){ 0.0f, 1.0f };
-  result->uvs[2] = (v2f){ 1.0f, 0.0f };
-  result->uvs[3] = (v2f){ 1.0f, 1.0f };
-  result->tex_id = tex.id;
-  return(result);
-}
-
-inline function R_UI_Quad *
-ui_add_tex_clipped(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims, v4f colour)
-{
-  R_UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, colour, colour, colour, colour, 0.0f, (v4f){0,0,0,0});
-  
-  f32 x_start = clip_p.x / (f32)tex.width;
-  f32 x_end = (clip_p.x + clip_dims.x) / (f32)tex.width;
-  f32 y_start = clip_p.y / (f32)tex.height;
-  f32 y_end = (clip_p.y + clip_dims.y) / (f32)tex.height;
-  
-  result->uvs[0] = (v2f){ x_start, y_start };
-  result->uvs[1] = (v2f){ x_start, y_end };
-  result->uvs[2] = (v2f){ x_end, y_start };
-  result->uvs[3] = (v2f){ x_end, y_end };
-  
-  result->tex_id = tex.id;
-  return(result);
-}
-
-function R_UI_Quad *
-ui_add_quad_border(R_UI_QuadArray *quads, v2f p, v2f dims,
-                   f32 smoothness, f32 vertex_roundness,
-                   f32 border_thickness, v4f border_colour)
-{
-  R_UI_Quad *result = ui_acquire_quad(quads);
-  result->p = p;
-  result->dims = dims;
-  result->smoothness = smoothness;
-  result->vertex_roundness = vertex_roundness;
-  
-  result->border_only = 1;
-  result->border_colour = border_colour;
-  result->border_thickness = border_thickness;
-  
-  result->tex_id = 0;
-  return(result);
-}
-
-function v2f
-ui_query_string_dimsf(R_Font *font, String_U8_Const str, ...)
-{
-  M_Arena *temp_arena = get_transient_arena(0, 0);
-  Temporary_Memory temp = begin_temporary_memory(temp_arena);
-  
-  va_list args;
-  va_start(args, str);
-  String_U8_Const format = str8_format_va(temp_arena, str, args);
-  va_end(args);
-  
-  v2f final_dims = {0};
-  ForLoopU64(char_idx, format.cap)
-  {
-    u8 char_val = format.s[char_idx];
-    Assert((char_val >= 32) && (char_val < 128));
-    
-    R_GlyphData glyph = font->glyphs[char_val];
-    if (char_val != ' ')
-    {
-      if (glyph.clip_height > final_dims.y)
-      {
-        final_dims.y = glyph.clip_height;
-      }
-      final_dims.x += glyph.advance;
-    }
-  }
-  
-  end_temporary_memory(temp);
-  return(final_dims);
-}
-
-function v2f
-ui_add_stringf(R_UI_QuadArray *quads, R_Font *font, v2f p, v4f colour, String_U8_Const str, ...)
-{
-  M_Arena *temp_arena = get_transient_arena(0, 0);
-  Temporary_Memory temp = begin_temporary_memory(temp_arena);
-  
-  va_list args;
-  va_start(args, str);
-  String_U8_Const format = str8_format_va(temp_arena, str, args);
-  va_end(args);
-  
-  v2f final_dims = {0};
-  v2f pen_p = p;
-  ForLoopU64(char_idx, format.cap)
-  {
-    u8 char_val = format.s[char_idx];
-    Assert((char_val >= 32) && (char_val < 128));
-    
-    R_GlyphData glyph = font->glyphs[char_val];
-    if (char_val != ' ')
-    {
-      if (glyph.clip_height > final_dims.y)
-      {
-        final_dims.y = glyph.clip_height;
-      }
-      
-      final_dims.x += glyph.advance;
-      v2f glyph_p = { pen_p.x, pen_p.y };
-      v2f glyph_dims = { glyph.clip_width, glyph.clip_height, };
-      v2f glyph_clip_p = { glyph.clip_x, glyph.clip_y };
-      ui_add_tex_clipped(quads, font->sheet, glyph_p,
-                         glyph_dims, glyph_clip_p,
-                         glyph_dims, colour);
-    }
-    
-    pen_p.x += glyph.advance;
-  }
-  
-  end_temporary_memory(temp);
-  return(final_dims);
 }
 
 function Animation_Config
@@ -897,13 +707,41 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
   f32 gap = 8.0f;
   v2f main_container_dims = v2f_make(left_container_dims.x + right_container_dims.x + gap*2 + padding_x, 720);
   
+  //ui_gap_x_next(game->ui_ctx, 8.0f);
+  //ui_padding_x_next(game->ui_ctx, 14.0f);
+  //ui_padding_y_next(game->ui_ctx, 14.0f);
+  // ui_push_hcontainer(game->ui_ctx, str8("sidebar"));
+  {
+    //ui_gap_y_next(game->ui_ctx, 4.0f);
+    //ui_bg_transparent_next(game->ui_ctx);
+    //ui_push_vcontainer(game->ui_ctx, str8("left-side"));
+    {
+      //ui_push_labelf(game->ui_ctx, str8("Wave:"));
+      //ui_push_labelf(game->ui_ctx, str8("Enemies Alive:"));
+      //ui_push_labelf(game->ui_ctx, str8("Health:"));
+      //ui_push_labelf(game->ui_ctx, str8("Experience:"));
+    }
+    
+    //ui_gap_y_next(game->ui_ctx, 4.0f);
+    //ui_bg_transparent_next(game->ui_ctx);
+    //ui_push_vcontainer(game->ui_ctx, str8("right-side"));
+    {
+      //ui_push_labelf(game->ui_ctx, str8("%u"), game->wave_number);
+      //ui_push_labelf(game->ui_ctx, str8("%u"), game->entity_count - 1);
+      //ui_push_progress_bar_with_stringf(game->ui_ctx, player->current_hp, player->max_hp, str8("##player_hp##%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
+      //ui_push_progress_bar_with_stringf(game->ui_ctx, player->player.current_experience, player->player.max_experience, str8("##player_exp##%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
+    }
+  }
+  
+  //
+  // TODO(cj): once we have implemented the UI, remove this.
+  //
   ui_add_quad(&renderer->ui_quads, v2f_make(main_container_x, main_container_y), main_container_dims, 1.0f, 8.0f, main_container_c, 2.0f, v4f_make(0.4f,0.2f,0.6f,1.0f));
   {
     ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x,padding_y}, (v4f){1,1,1,1}, str8("Wave: %u"), game->wave_number);
     ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x, 24+padding_y + gap}, (v4f){1,1,1,1}, str8("Enemies Alive: "));
     ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x + left_container_dims.x + gap, 24+padding_y + gap}, (v4f){1,1,1,1}, str8("%u"), game->entity_count - 1);
     
-    //ui_add_quad(&renderer->ui_quads, v2f_make(main_container_x, main_container_y), right_container_dims, 0.0f, 0.0f, rgba(0,0,0,0), 0.0f, v4f_make(0.4f,0.2f,0.6f,0.0f));
     {
       v2f helf_label_dims = ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x,48+padding_y + 2*gap}, (v4f){1,1,1,1}, str8("Health: "));
       f32 health_bar_border = 2.0f;
