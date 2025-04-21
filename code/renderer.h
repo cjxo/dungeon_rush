@@ -38,8 +38,6 @@ typedef struct
   v4f vertex_colours[4];
   f32 vertex_roundness;
   
-  u32 border_only;
-  v4f border_colour;
   f32 border_thickness;
   
   v2f shadow_offset;

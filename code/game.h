@@ -10,28 +10,6 @@ inline function R_Game_Quad *game_add_tex_clipped(R_Game_QuadArray *quads, v3f p
                                                   v2f clip_p, v2f clip_dims, v4f mod,
                                                   b32 flip_horizontal);
 
-inline function R_UI_Quad *ui_acquire_quad(R_UI_QuadArray *quads);
-function v2f               ui_add_stringf(R_UI_QuadArray *quads, R_Font *font, v2f p, v4f colour, String_U8_Const str, ...);
-function v2f               ui_query_string_dimsf(R_Font *font, String_U8_Const str, ...);
-
-function R_UI_Quad *       ui_add_quad(R_UI_QuadArray *quads, v2f p, v2f dims,
-                                       f32 smoothness, f32 vertex_roundness, v4f vertex_colours,
-                                       f32 border_thickness, v4f border_colour);
-function R_UI_Quad *       ui_add_quad_per_vertex_colours(R_UI_QuadArray *quads, v2f p, v2f dims,
-                                                          f32 smoothness,
-                                                          f32 vertex_roundness, v4f vertex_top_left_c, v4f vertex_bottom_left_c,
-                                                          v4f vertex_top_right_c, v4f vertex_bottom_right_c,
-                                                          f32 border_thickness, v4f border_colour);
-
-function R_UI_Quad *       ui_add_quad_shadowed(R_UI_QuadArray *quads, v2f p, v2f dims,
-                                                f32 smoothness,
-                                                f32 vertex_roundness, v4f colour_per_vertex,
-                                                f32 border_thickness, v4f border_colour,
-                                                v2f shadow_offset,
-                                                v2f shadow_dims_offset,
-                                                v4f shadow_colour_per_vertex,
-                                                f32 shadow_smoothness);
-
 // ----------------------- //
 typedef struct
 {

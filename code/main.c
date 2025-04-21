@@ -306,7 +306,7 @@ draw_health_bar(R_Game_QuadArray *quads, Entity *entity)
 }
 
 function void
-game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f32 game_update_secs)
+game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Game_Memory *memory, f32 game_update_secs)
 {
   R_InputForRendering *renderer = memory->renderer;
   // the player is always at 0th idx
@@ -690,53 +690,71 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
     }
   }
   
+  ui_begin(ui_ctx, renderer->reso_width, renderer->reso_height, game_update_secs);
+  {
+    ui_border_thickness_push(ui_ctx, 1.0f);
+    ui_gap_x_next(ui_ctx, 8.0f);
+    ui_padding_x_next(ui_ctx, 14.0f);
+    ui_padding_y_next(ui_ctx, 14.0f);
+    ui_bg_colour_next(ui_ctx, rgba(37,33,49,1));
+    ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
+    ui_vertex_roundness_next(ui_ctx, 8.0f);
+    ui_smoothness_push(ui_ctx, 0.75f);
+    ui_push_hlayout(ui_ctx, str8("sidebar"));
+    {
+      ui_gap_y_next(ui_ctx, 4.0f);
+      //ui_bg_transparent_next(ui_ctx);
+      ui_push_vlayout(ui_ctx, str8("left-side"));
+      {
+        ui_push_label(ui_ctx, str8("Wave:"));
+        ui_push_label(ui_ctx, str8("Enemies Alive:"));
+        ui_push_label(ui_ctx, str8("Health:"));
+        ui_push_label(ui_ctx, str8("Experience:"));
+      }
+      ui_vlayout_pop(ui_ctx);
+      
+      ui_gap_y_next(ui_ctx, 4.0f);
+      //ui_bg_transparent_next(ui_ctx);
+      //ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.9f,0.2f,1.0f));
+      ui_push_vlayout(ui_ctx, str8("right-side"));
+      {
+        ui_push_labelf(ui_ctx, str8("WaveNum###%u"), game->wave_number);
+        ui_push_labelf(ui_ctx, str8("EntityCount###%u"), game->entity_count - 1);
+        ui_push_labelf(ui_ctx, str8("PlayerP###<%.2f, %.2f>"), player->p.x, player->p.y);
+        //ui_push_progress_bar_with_stringf(game->ui_ctx, player->current_hp, player->max_hp, str8("player_hp###%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
+        //ui_push_progress_bar_with_stringf(game->ui_ctx, player->player.current_experience, player->player.max_experience, str8("player_exp###%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
+      }
+      ui_vlayout_pop(ui_ctx);
+    }
+    ui_hlayout_pop(ui_ctx);
+  }
+  ui_end(ui_ctx);
+  
+#if 0
+  
   //
   // TODO(cj): "UI" with quotes. Hardcode for now. The following is the idea of the usage code of our future
   // UI Library. It is immediate.
   //
   
   v2f right_container_dims = v2f_make(180.0f, 720.0f);
-  v2f left_container_dims = ui_query_string_dimsf(&renderer->font, str8("Enemies Alive: "));
+  v2f left_container_dims = ui_query_string_dimsf(renderer->font, str8("Enemies Alive: "));
   left_container_dims.y = 720.0f;
   
   f32 main_container_x = 0.0f;
   f32 main_container_y = 0.0f;
   v4f main_container_c = rgba(37,33,49,1);
+  v4f main_container_b_c = v4f_make(0.4f,0.2f,0.6f,1.0f);
   f32 padding_x = 14.0f;
   f32 padding_y = 14.0f;
   f32 gap = 8.0f;
   v2f main_container_dims = v2f_make(left_container_dims.x + right_container_dims.x + gap*2 + padding_x, 720);
   
-  //ui_gap_x_next(game->ui_ctx, 8.0f);
-  //ui_padding_x_next(game->ui_ctx, 14.0f);
-  //ui_padding_y_next(game->ui_ctx, 14.0f);
-  // ui_push_hcontainer(game->ui_ctx, str8("sidebar"));
-  {
-    //ui_gap_y_next(game->ui_ctx, 4.0f);
-    //ui_bg_transparent_next(game->ui_ctx);
-    //ui_push_vcontainer(game->ui_ctx, str8("left-side"));
-    {
-      //ui_push_labelf(game->ui_ctx, str8("Wave:"));
-      //ui_push_labelf(game->ui_ctx, str8("Enemies Alive:"));
-      //ui_push_labelf(game->ui_ctx, str8("Health:"));
-      //ui_push_labelf(game->ui_ctx, str8("Experience:"));
-    }
-    
-    //ui_gap_y_next(game->ui_ctx, 4.0f);
-    //ui_bg_transparent_next(game->ui_ctx);
-    //ui_push_vcontainer(game->ui_ctx, str8("right-side"));
-    {
-      //ui_push_labelf(game->ui_ctx, str8("%u"), game->wave_number);
-      //ui_push_labelf(game->ui_ctx, str8("%u"), game->entity_count - 1);
-      //ui_push_progress_bar_with_stringf(game->ui_ctx, player->current_hp, player->max_hp, str8("##player_hp##%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
-      //ui_push_progress_bar_with_stringf(game->ui_ctx, player->player.current_experience, player->player.max_experience, str8("##player_exp##%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
-    }
-  }
-  
   //
   // TODO(cj): once we have implemented the UI, remove this.
   //
-  ui_add_quad(&renderer->ui_quads, v2f_make(main_container_x, main_container_y), main_container_dims, 1.0f, 8.0f, main_container_c, 2.0f, v4f_make(0.4f,0.2f,0.6f,1.0f));
+  ui_add_quad(&renderer->ui_quads, v2f_make(main_container_x, main_container_y), main_container_dims, 1.0f, 8.0f, main_container_c, 0.0f);
+  ui_add_quad(&renderer->ui_quads, v2f_make(main_container_x, main_container_y), main_container_dims, 1.0f, 8.0f, main_container_b_c, 2.0f);
   {
     ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x,padding_y}, (v4f){1,1,1,1}, str8("Wave: %u"), game->wave_number);
     ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x, 24+padding_y + gap}, (v4f){1,1,1,1}, str8("Enemies Alive: "));
@@ -749,8 +767,9 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
       f32 health_bar_width = 180;
       v4f health_bar_c = rgba(224,120,86,1.0f);
       ui_add_quad(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 48+padding_y + 2*gap), v2f_make(health_bar_width*health_fill_percent, helf_label_dims.y),
-                  1.0f, 1.0f, health_bar_c, 0.0f, rgba(113,29,56,1));
-      ui_add_quad_border(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 48+padding_y + gap*2), v2f_make(health_bar_width, helf_label_dims.y), 1.0f, 1.0f, health_bar_border, rgba(113,29,56,1));
+                  1.0f, 1.0f, health_bar_c, 0.0f);
+      //ui_add_quad_border(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 48+padding_y + gap*2), v2f_make(health_bar_width, helf_label_dims.y), 1.0f, 1.0f, 0.0f, rgba(113,29,56,1));
+      //ui_add_quad_border(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 48+padding_y + gap*2), v2f_make(health_bar_width, helf_label_dims.y), 1.0f, 1.0f, health_bar_border);
       ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x + left_container_dims.x + gap*2, 48+padding_y + 2*gap}, (v4f){1,1,1,1}, str8("%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
     }
     
@@ -760,11 +779,12 @@ game_update_and_render(Game_State *game, OS_Input *input, Game_Memory *memory, f
       f32 exp_fill_percent = (f32)player->player.current_experience / (f32)player->player.max_experience;
       f32 exp_bar_width = 180;
       v4f exp_bar_c = rgba(85,108,224,1.0f);
-      ui_add_quad_per_vertex_colours(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 72.0f+padding_y + gap*3), v2f_make(exp_bar_width*exp_fill_percent, label_dims.y), 1.0f, 1.0f, exp_bar_c,exp_bar_c,exp_bar_c,exp_bar_c, 0.0f, rgba(0,0,0,0));
-      ui_add_quad_border(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 72+padding_y + gap*3), v2f_make(exp_bar_width, label_dims.y), 1.0f, 1.0f, exp_bar_border, rgba(64,29,112,1));
+      ui_add_quad_per_vertex_colours(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 72.0f+padding_y + gap*3), v2f_make(exp_bar_width*exp_fill_percent, label_dims.y), 1.0f, 1.0f, exp_bar_c,exp_bar_c,exp_bar_c,exp_bar_c, 0.0f);
+      //ui_add_quad_border(&renderer->ui_quads, v2f_make(padding_x + left_container_dims.x + gap, 72+padding_y + gap*3), v2f_make(exp_bar_width, label_dims.y), 1.0f, 1.0f, exp_bar_border, rgba(64,29,112,1));
       ui_add_stringf(&renderer->ui_quads, &renderer->font, (v2f){padding_x + left_container_dims.x + gap*2, 72+padding_y + 3*gap}, (v4f){1,1,1,1}, str8("%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
     }
   }
+#endif
 }
 
 int WINAPI
@@ -799,6 +819,9 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
   Game_State game = {0};
   game_init(&game);
   
+  UI_Context *ui_ctx = ui_create_context(&window.input, &renderer.input_for_rendering.ui_quads, renderer.input_for_rendering.font);
+  
+  //u64 test0 = str8_find_first_string(str8("hello###World"), str8("###"), 0);
   LARGE_INTEGER perf_counter_begin;
   while (1)
   {
@@ -810,7 +833,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
       ExitProcess(0);
     }
     
-    game_update_and_render(&game, input, &memory, seconds_per_frame);
+    game_update_and_render(&game, ui_ctx, input, &memory, seconds_per_frame);
     
 #if defined(DR_DEBUG)
     if (OS_KeyReleased(input, OS_Input_KeyType_P))

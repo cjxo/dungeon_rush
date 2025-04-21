@@ -72,6 +72,16 @@ m_arena_pop(M_Arena *arena, u64 pop_size)
   }
 }
 
+inline function void
+m_arena_clear(M_Arena *arena)
+{
+  u64 arena_size = sizeof(M_Arena);
+  if (arena->stack_ptr > arena_size)
+  {
+    m_arena_pop(arena, arena->stack_ptr - arena_size);
+  }
+}
+
 inline function Temporary_Memory
 begin_temporary_memory(M_Arena *arena)
 {
@@ -148,5 +158,83 @@ str8_format_va(M_Arena *arena, String_U8_Const str, va_list args0)
   }
   
   va_end(args1);
+  return(result);
+}
+
+function u64
+str8_calculate_hash(String_U8_Const str, u64 base)
+{
+  u64 result = base;
+  for (u64 idx = 0; idx < str.count; ++idx)
+  {
+    result = (result << 5) + (u64)str.s[idx];
+  }
+  return(result);
+}
+
+function b32
+str8_equal_strings(String_U8_Const a, String_U8_Const b)
+{
+  b32 result = 0;
+  
+  if (a.count == b.count)
+  {
+    u64 N = a.count;
+    u64 char_idx = 0;
+    while ((char_idx < N) && (a.s[char_idx] == b.s[char_idx]))
+    {
+      ++char_idx;
+    }
+    
+    result = (char_idx == N);
+  }
+  
+  return(result);
+}
+
+function u64
+str8_find_first_string(String_U8_Const str, String_U8_Const to_find, u64 offset_from_beginning_of_source)
+{
+  u64 result = InvalidIndexU64;
+  if (to_find.count && (str.count >= to_find.count))
+  {
+    result = offset_from_beginning_of_source;
+    u8 first_char_of_to_find = to_find.s[0];
+    u64 one_past_last = str.count - to_find.count + 1;
+    
+    for (; result < one_past_last; ++result)
+    {
+      if (str.s[result] == first_char_of_to_find)
+      {
+        if (str.count >= (result + to_find.count))
+        {
+          String_U8_Const substring;
+          substring.s = str.s + result;
+          substring.count = to_find.count;
+          if (str8_equal_strings(substring, to_find))
+          {
+            break;
+          }
+        }
+      }
+    }
+    
+    if (result == one_past_last)
+    {
+      result = InvalidIndexU64;
+    }
+  }
+  
+  return(result);
+}
+
+function String_U8
+str8_copy(M_Arena *arena, String_U8_Const str)
+{
+  String_U8 result;
+  result.s = M_Arena_PushArray(arena, u8, str.cap);
+  MemoryCopy(result.s,str.s,str.count);
+  result.count = str.count;
+  result.cap = str.cap;
   return(result);
 }

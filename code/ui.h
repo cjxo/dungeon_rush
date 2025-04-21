@@ -7,6 +7,8 @@ enum
 {
   UI_Widget_Flag_Clickable = 0x1,
   UI_Widget_Flag_StringContent = 0x2,
+  UI_Widget_Flag_BackgroundColour = 0x4,
+  UI_Widget_Flag_BorderColour = 0x8,
 };
 
 typedef u64 UI_Widget_IndividualSizingType;
@@ -18,6 +20,12 @@ enum
   UI_Widget_IndividualSizing_Count,
 };
 
+typedef struct
+{
+  UI_Widget_IndividualSizingType type;
+  f32 value;
+} UI_Widget_IndividualSize;
+
 typedef u64 UI_AxisType;
 enum
 {
@@ -28,7 +36,7 @@ enum
 
 typedef union
 {
-  u64 h[1];
+  u64 key;
 } UI_Key;
 
 typedef struct UI_Widget UI_Widget;
@@ -42,7 +50,7 @@ struct UI_Widget
   };
   
   // NOTE(cj): used for identifying/validating widgets
-  u64 build_id;
+  u64 build_last_touch_index;
   UI_Key key;
   UI_Widget_Flag flags;
   String_U8_Const str8_identifier;
@@ -52,18 +60,16 @@ struct UI_Widget
   
   // NOTE(cj): used for computing layout
   v2f rel_parent_p;
-  v2f text_dims;
-  UI_Widget_IndividualSizingType individual_size_type;
   UI_AxisType children_layout_axis;
+  f32 padding[UI_Axis_Count];
+  f32 gap[UI_Axis_Count];
+  UI_Widget_IndividualSize individual_size[UI_Axis_Count];
   
   // NOTE(cj): final calculation
   v2f final_p;
   v2f final_dims;
   
   // NOTE(cj): properties
-  f32 padding[UI_Axis_Count];
-  f32 gap[UI_Axis_Count];
-  
   v4f tl_bg_colour;
   v4f bl_bg_colour;
   v4f tr_bg_colour;
@@ -75,6 +81,10 @@ struct UI_Widget
   v4f tr_border_colour;
   v4f br_border_colour;
   f32 border_thickness;
+  
+  v4f text_colour;
+  
+  f32 hot_t, active_t;
   f32 smoothness;
 };
 
@@ -123,53 +133,78 @@ return ui_##name##_peek(ctx);\
 #define UI_CacheSize 128
 typedef struct
 {
+  M_Arena *arena, *front_util_arena, *back_util_arena;
+  
   UI_Widget *root;
+  f32 max_width;
+  f32 max_height;
+  
+  // NOTE(cj): The purpose of the cache is for saving
+  // ui layout calculation for user interaction.
+  // Because, when the user first called the create_widget function,
+  // the widget does not have any size or position yet, and hence we 
+  // will recieve one frame delay the first time we call the create_widget function.
+  // The layout calculation algorithm happens on ui_end. We will cache this result
+  // on this right below me.
   UI_Widget *cache[UI_CacheSize];
   UI_Widget *free_widgets;
   
-  u64 current_build_id;
+  u64 current_build_index;
   
   OS_Input *input;
-  R_UI_QuadArray *ui_quads;
+  R_UI_QuadArray *quads;
   R_Font font;
   
   f32 dt_step_secs;
   
+  UI_Key hot, active;
+  
   // stacks
+  UI_DefineStack(UI_Widget *, parent);
+  
   UI_DefineStack(f32, padding_x);
   UI_DefineStack(f32, padding_y);
   UI_DefineStack(f32, gap_x);
   UI_DefineStack(f32, gap_y);
   
-  UI_DefineStack(v4f, vertex_roundness);
+  UI_DefineStack(f32, vertex_roundness);
   UI_DefineStack(v4f, tl_bg_colour);
   UI_DefineStack(v4f, bl_bg_colour);
   UI_DefineStack(v4f, tr_bg_colour);
   UI_DefineStack(v4f, br_bg_colour);
   
-  UI_DefineStack(v4f, border_thickness);
+  UI_DefineStack(f32, border_thickness);
   UI_DefineStack(v4f, tl_border_colour);
   UI_DefineStack(v4f, bl_border_colour);
   UI_DefineStack(v4f, tr_border_colour);
   UI_DefineStack(v4f, br_border_colour);
+  
+  UI_DefineStack(f32, smoothness);
+  
+  UI_DefineStack(v4f, text_colour);
 } UI_Context;
 
+UI_DefineStackFN(UI_Widget *, parent);
 UI_DefineStackFN(f32, padding_x);
 UI_DefineStackFN(f32, padding_y);
 UI_DefineStackFN(f32, gap_x);
 UI_DefineStackFN(f32, gap_y);
 
-UI_DefineStackFN(v4f, vertex_roundness);
+UI_DefineStackFN(f32, vertex_roundness);
 UI_DefineStackFN(v4f, tl_bg_colour);
 UI_DefineStackFN(v4f, bl_bg_colour);
 UI_DefineStackFN(v4f, tr_bg_colour);
 UI_DefineStackFN(v4f, br_bg_colour);
 
-UI_DefineStackFN(v4f, border_thickness);
+UI_DefineStackFN(f32, border_thickness);
 UI_DefineStackFN(v4f, tl_border_colour);
 UI_DefineStackFN(v4f, bl_border_colour);
 UI_DefineStackFN(v4f, tr_border_colour);
 UI_DefineStackFN(v4f, br_border_colour);
+
+UI_DefineStackFN(f32, smoothness);
+
+UI_DefineStackFN(v4f, text_colour);
 
 inline function v2f
 ui_gap_push(UI_Context *ctx, f32 x, f32 y)
@@ -207,13 +242,28 @@ ui_bg_colour_next(UI_Context *ctx, v4f colour)
   return colour;
 }
 
+inline function v4f
+ui_border_colour_next(UI_Context *ctx, v4f colour)
+{
+  ui_tl_border_colour_next(ctx, colour);
+  ui_bl_border_colour_next(ctx, colour);
+  ui_tr_border_colour_next(ctx, colour);
+  ui_br_border_colour_next(ctx, colour);
+  return colour;
+}
+
+#define ui_vlayout_pop(ctx) ui_parent_pop(ctx)
+#define ui_hlayout_pop(ctx) ui_parent_pop(ctx)
+
 function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font);
+
 function void        ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs);
 function void        ui_end(UI_Context *ctx);
 
 function UI_Widget *ui_push_vlayout(UI_Context *ctx, String_U8_Const name);
 function UI_Widget *ui_push_hlayout(UI_Context *ctx, String_U8_Const name);
 function UI_Widget *ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...);
+function UI_Widget *ui_push_label(UI_Context *ctx, String_U8_Const str);
 function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
 //function UI_Widget *ui_push_text_input(UI_Context *ctx, String_U8_Const name, String_U8 *result);
 

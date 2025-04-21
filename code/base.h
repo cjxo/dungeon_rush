@@ -4,6 +4,7 @@
 #define BASE_H
 
 #include <stdint.h>
+#include <string.h>
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;
@@ -55,6 +56,12 @@ Assert(0);\
 #define AlignAToB(a,b) ((a)+((b)-1))&(~((b)-1))
 #define MemoryClear(m,sz) memset(m,'\0',sz)
 #define ClearStructP(s) MemoryClear(s,sizeof(*s))
+#define Swap(T,a,b) Stmnt(T temp = a; a = b; b = temp;)
+#define MemoryCopy(dest,src,sz) memcpy(dest,src,sz)
+
+#define InvalidIndexU64 0xFFFFFFFFFFFFFFFFllu
+
+#define SLLPushFrontN(head,n,next) (((n)->next=(head)),(head)=(n))
 
 #define M_Arena_DefaultCommit KB(128)
 typedef struct
@@ -65,11 +72,12 @@ typedef struct
   u64 capacity;
 } M_Arena;
 
-#define M_Arena_PushStruct(arena,T) M_Arena_PushArray((arena),T)
+#define M_Arena_PushStruct(arena,T) M_Arena_PushArray((arena),T,1)
 #define M_Arena_PushArray(arena,T,count) (T*)m_arena_push(arena,sizeof(T)*(count))
-function M_Arena *m_arena_reserve(u64 reserve_size);
-function void    *m_arena_push(M_Arena *arena, u64 push_size);
-function void     m_arena_pop(M_Arena *arena, u64 pop_size);
+function M_Arena     *m_arena_reserve(u64 reserve_size);
+function void        *m_arena_push(M_Arena *arena, u64 push_size);
+function void         m_arena_pop(M_Arena *arena, u64 pop_size);
+inline function void  m_arena_clear(M_Arena *arena);
 
 typedef struct
 {
@@ -88,7 +96,12 @@ typedef struct
   u64 cap;
   u64 count;
 } String_U8_Const;
+typedef String_U8_Const String_U8;
 
 function String_U8_Const str8_format_va(M_Arena *arena, String_U8_Const str, va_list args0);
+function u64             str8_calculate_hash(String_U8_Const str, u64 base);
+function u64             str8_find_first_string(String_U8_Const str, String_U8_Const to_find, u64 offset_from_beginning_of_source);
+function b32             str8_equal_strings(String_U8_Const a, String_U8_Const b);
+function String_U8       str8_copy(M_Arena *arena, String_U8_Const str);
 
 #endif //BASE_H
