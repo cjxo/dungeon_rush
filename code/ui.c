@@ -233,6 +233,33 @@ ui_zero_key(void)
   return(result);
 }
 
+inline function UI_Widget_IndividualSize
+ui_null_size(void)
+{
+  UI_Widget_IndividualSize result;
+  result.type = UI_Widget_IndividualSizing_Null;
+  result.value = 0.0f;
+  return(result);
+}
+
+inline function UI_Widget_IndividualSize
+ui_pixel_size(f32 value)
+{
+  UI_Widget_IndividualSize result;
+  result.type = UI_Widget_IndividualSizing_Pixels;
+  result.value = value;
+  return(result);
+}
+
+inline function UI_Widget_IndividualSize
+ui_children_sum_size(f32 initial_size)
+{
+  UI_Widget_IndividualSize result;
+  result.type = UI_Widget_IndividualSizing_ChildrenSum;
+  result.value = initial_size;
+  return(result);
+}
+
 function UI_Context *
 ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font)
 {
@@ -277,7 +304,7 @@ ui_extract_content_from_identifier(String_U8_Const identifier)
 }
 
 function UI_Widget *
-ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags, UI_AxisType children_layout)
+ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags)
 {
   UI_Key key = ui_calculate_key_from_identifier(identifier);
   u64 cache_idx = key.key & (UI_CacheSize - 1);
@@ -334,36 +361,36 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
       {
         result->individual_size[UI_Axis_Y].value = ctx->font.ascent + ctx->font.descent;
       }
-    }
-    else if ((children_layout == UI_Axis_X) || ((children_layout == UI_Axis_Y)))
-    {
-      result->individual_size[UI_Axis_X].type = UI_Widget_IndividualSizing_ChildrenSum;
-      result->individual_size[UI_Axis_X].value = 0.0f;
-      result->individual_size[UI_Axis_Y].type = UI_Widget_IndividualSizing_ChildrenSum;
-      result->individual_size[UI_Axis_Y].value = 0.0f;
-      result->children_layout_axis = children_layout;
-    }
-    
-    if (ctx->parent_ptr > 0)
-    {
-      UI_Widget *top_parent = ui_parent_peek(ctx);
-      result->parent = top_parent;
-      if (top_parent->leftmost_child == 0)
-      {
-        top_parent->leftmost_child = top_parent->rightmost_child = result;
-      }
-      else
-      {
-        Assert(top_parent->rightmost_child != 0);
-        top_parent->rightmost_child->next_sibling = result;
-        result->prev_sibling = top_parent->rightmost_child;
-        top_parent->rightmost_child = result;
-      }
+      
+      ui_size_x_peek_or_auto_pop(ctx);
+      ui_size_y_peek_or_auto_pop(ctx);
     }
     else
     {
-      result->parent = 0;
+      result->individual_size[UI_Axis_X] = ui_size_x_peek_or_auto_pop(ctx);
+      result->individual_size[UI_Axis_Y] = ui_size_y_peek_or_auto_pop(ctx);
     }
+  }
+  
+  if (ctx->parent_ptr > 0)
+  {
+    UI_Widget *top_parent = ui_parent_peek_or_auto_pop(ctx);
+    result->parent = top_parent;
+    if (top_parent->leftmost_child == 0)
+    {
+      top_parent->leftmost_child = top_parent->rightmost_child = result;
+    }
+    else
+    {
+      Assert(top_parent->rightmost_child != 0);
+      top_parent->rightmost_child->next_sibling = result;
+      result->prev_sibling = top_parent->rightmost_child;
+      top_parent->rightmost_child = result;
+    }
+  }
+  else
+  {
+    result->parent = 0;
   }
   
   result->padding[UI_Axis_X] = ui_padding_x_peek_or_auto_pop(ctx);
@@ -430,6 +457,8 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   // NOTE(cj): reset stacks to defaults
   //
   ctx->parent_ptr = 0;
+  ctx->size_x_ptr = 0;
+  ctx->size_y_ptr = 0;
   ctx->padding_x_ptr = 0;
   ctx->padding_y_ptr = 0;
   ctx->gap_x_ptr = 0;
@@ -446,6 +475,9 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   ctx->br_border_colour_ptr = 0;
   ctx->smoothness_ptr = 0;
   ctx->text_colour_ptr = 0;
+  
+  ui_size_x_push(ctx, ui_null_size());
+  ui_size_y_push(ctx, ui_null_size());
   
   ui_padding_x_push(ctx, 0.0f);
   ui_padding_y_push(ctx, 0.0f);
@@ -474,10 +506,11 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
 function UI_Widget *
 ui_push_vlayout(UI_Context *ctx, String_U8_Const name)
 {
+  ui_size_x_next(ctx, ui_null_size());
+  ui_size_y_next(ctx, ui_children_sum_size(0.0f));
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
-                                     UI_Widget_Flag_BorderColour,
-                                     UI_Axis_Y);
+                                     UI_Widget_Flag_BorderColour);
   ui_parent_push(ctx, result);
   return(result);
 }
@@ -485,10 +518,11 @@ ui_push_vlayout(UI_Context *ctx, String_U8_Const name)
 function UI_Widget *
 ui_push_hlayout(UI_Context *ctx, String_U8_Const name)
 {
+  ui_size_x_next(ctx, ui_children_sum_size(0.0f));
+  ui_size_y_next(ctx, ui_null_size());
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
-                                     UI_Widget_Flag_BorderColour,
-                                     UI_Axis_X);
+                                     UI_Widget_Flag_BorderColour);
   ui_parent_push(ctx, result);
   return(result);
 }
@@ -499,8 +533,7 @@ ui_push_label(UI_Context *ctx, String_U8_Const str)
   UI_Widget *result = ui_push_widget(ctx, str,
                                      UI_Widget_Flag_StringContent |
                                      UI_Widget_Flag_BackgroundColour |
-                                     UI_Widget_Flag_BorderColour,
-                                     UI_Axis_Count);
+                                     UI_Widget_Flag_BorderColour);
   return(result);
 }
 
@@ -552,43 +585,40 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
   f32 accumulated_size = 0.0f;
   if (indie_size.type == UI_Widget_IndividualSizing_ChildrenSum)
   {
-    if (root->children_layout_axis == axis)
+    for (UI_Widget *child = root->leftmost_child;
+         child;
+         child = child->next_sibling)
     {
-      for (UI_Widget *child = root->leftmost_child;
-           child;
-           child = child->next_sibling)
+      ui_calculate_downwards_dependent_sizes(child, axis);
+      if (child->next_sibling)
       {
-        ui_calculate_downwards_dependent_sizes(child, axis);
-        if (child->next_sibling)
-        {
-          accumulated_size += child->final_dims.v[axis] + root->gap[axis];
-        }
-        else
-        {
-          accumulated_size += child->final_dims.v[axis];
-        }
+        accumulated_size += child->final_dims.v[axis] + root->gap[axis];
+      }
+      else
+      {
+        accumulated_size += child->final_dims.v[axis];
       }
     }
-    else
-    {
-      //
-      // TODO(cj): Consider padding and gap
-      //
-      for (UI_Widget *child = root->leftmost_child;
-           child;
-           child = child->next_sibling)
-      {
-        ui_calculate_downwards_dependent_sizes(child, axis);
-        f32 child_size = child->final_dims.v[axis];
-        if (child_size > accumulated_size)
-        {
-          accumulated_size = child_size;
-        }
-      }
-    }
-    
-    root->final_dims.v[axis] += accumulated_size + root->padding[axis] * 2.0f;
   }
+  else
+  {
+    //
+    // TODO(cj): Consider padding and gap
+    //
+    for (UI_Widget *child = root->leftmost_child;
+         child;
+         child = child->next_sibling)
+    {
+      ui_calculate_downwards_dependent_sizes(child, axis);
+      f32 child_size = child->final_dims.v[axis];
+      if (child_size > accumulated_size)
+      {
+        accumulated_size = child_size;
+      }
+    }
+  }
+  
+  root->final_dims.v[axis] += accumulated_size + root->padding[axis] * 2.0f;
 }
 
 function void
@@ -598,34 +628,31 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
   f32 accumulated_p = 0.0f;
   if (indie_size.type == UI_Widget_IndividualSizing_ChildrenSum)
   {
-    if (root->children_layout_axis == axis)
+    //
+    // TODO(cj): Consider padding and gap
+    //
+    for (UI_Widget *child = root->leftmost_child;
+         child;
+         child = child->next_sibling)
     {
-      //
-      // TODO(cj): Consider padding and gap
-      //
-      for (UI_Widget *child = root->leftmost_child;
-           child;
-           child = child->next_sibling)
-      {
-        child->rel_parent_p.v[axis] += accumulated_p + root->border_thickness + root->padding[axis];
-        accumulated_p += child->final_dims.v[axis] + root->gap[axis];
-        
-        child->final_p.v[axis] = root->final_p.v[axis] + child->rel_parent_p.v[axis];
-        ui_calculate_final_positions(child, axis);
-      }
+      child->rel_parent_p.v[axis] += accumulated_p + root->border_thickness + root->padding[axis];
+      accumulated_p += child->final_dims.v[axis] + root->gap[axis];
+      
+      child->final_p.v[axis] = root->final_p.v[axis] + child->rel_parent_p.v[axis];
+      ui_calculate_final_positions(child, axis);
     }
-    else
+  }
+  else
+  {
+    //
+    // TODO(cj): Consider padding and gap
+    //
+    for (UI_Widget *child = root->leftmost_child;
+         child;
+         child = child->next_sibling)
     {
-      //
-      // TODO(cj): Consider padding and gap
-      //
-      for (UI_Widget *child = root->leftmost_child;
-           child;
-           child = child->next_sibling)
-      {
-        child->final_p.v[axis] = root->final_p.v[axis] + root->border_thickness + root->padding[axis];
-        ui_calculate_final_positions(child, axis);
-      }
+      child->final_p.v[axis] = root->final_p.v[axis] + root->border_thickness + root->padding[axis];
+      ui_calculate_final_positions(child, axis);
     }
   }
 }

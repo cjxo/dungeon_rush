@@ -721,8 +721,10 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
         ui_push_labelf(ui_ctx, str8("WaveNum###%u"), game->wave_number);
         ui_push_labelf(ui_ctx, str8("EntityCount###%u"), game->entity_count - 1);
         ui_push_labelf(ui_ctx, str8("PlayerP###<%.2f, %.2f>"), player->p.x, player->p.y);
+        ui_size_push(ui_ctx, ui_pixel_size(200.0f), ui_pixel_size(25.0f));
         //ui_push_progress_bar_with_stringf(game->ui_ctx, player->current_hp, player->max_hp, str8("player_hp###%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
         //ui_push_progress_bar_with_stringf(game->ui_ctx, player->player.current_experience, player->player.max_experience, str8("player_exp###%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
+        ui_size_pop(ui_ctx);
       }
       ui_vlayout_pop(ui_ctx);
     }

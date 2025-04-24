@@ -60,7 +60,6 @@ struct UI_Widget
   
   // NOTE(cj): used for computing layout
   v2f rel_parent_p;
-  UI_AxisType children_layout_axis;
   f32 padding[UI_Axis_Count];
   f32 gap[UI_Axis_Count];
   UI_Widget_IndividualSize individual_size[UI_Axis_Count];
@@ -162,6 +161,9 @@ typedef struct
   // stacks
   UI_DefineStack(UI_Widget *, parent);
   
+  UI_DefineStack(UI_Widget_IndividualSize, size_x);
+  UI_DefineStack(UI_Widget_IndividualSize, size_y);
+  
   UI_DefineStack(f32, padding_x);
   UI_DefineStack(f32, padding_y);
   UI_DefineStack(f32, gap_x);
@@ -185,6 +187,10 @@ typedef struct
 } UI_Context;
 
 UI_DefineStackFN(UI_Widget *, parent);
+
+UI_DefineStackFN(UI_Widget_IndividualSize, size_x);
+UI_DefineStackFN(UI_Widget_IndividualSize, size_y);
+
 UI_DefineStackFN(f32, padding_x);
 UI_DefineStackFN(f32, padding_y);
 UI_DefineStackFN(f32, gap_x);
@@ -205,6 +211,20 @@ UI_DefineStackFN(v4f, br_border_colour);
 UI_DefineStackFN(f32, smoothness);
 
 UI_DefineStackFN(v4f, text_colour);
+
+inline function void
+ui_size_push(UI_Context *ctx, UI_Widget_IndividualSize x, UI_Widget_IndividualSize y)
+{
+  ui_size_x_push(ctx, x);
+  ui_size_y_push(ctx, y);
+}
+
+inline function void
+ui_size_pop(UI_Context *ctx)
+{
+  ui_size_x_pop(ctx);
+  ui_size_y_pop(ctx);
+}
 
 inline function v2f
 ui_gap_push(UI_Context *ctx, f32 x, f32 y)
@@ -255,16 +275,23 @@ ui_border_colour_next(UI_Context *ctx, v4f colour)
 #define ui_vlayout_pop(ctx) ui_parent_pop(ctx)
 #define ui_hlayout_pop(ctx) ui_parent_pop(ctx)
 
-function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font);
+// UI Helpers
+inline function UI_Widget_IndividualSize ui_null_size(void);
+inline function UI_Widget_IndividualSize ui_pixel_size(f32 value);
+inline function UI_Widget_IndividualSize ui_children_sum_size(f32 initial_size);
 
+// UI init
+function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font);
 function void        ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs);
 function void        ui_end(UI_Context *ctx);
 
+// UI Widgets
 function UI_Widget *ui_push_vlayout(UI_Context *ctx, String_U8_Const name);
 function UI_Widget *ui_push_hlayout(UI_Context *ctx, String_U8_Const name);
 function UI_Widget *ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...);
 function UI_Widget *ui_push_label(UI_Context *ctx, String_U8_Const str);
 function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
+//function UI_Widget *ui_push_progress_bar_with_stringf(UI_Context *ctx, f32 current_progress, f32 max_progress, String_U8_Const str, ...);
 //function UI_Widget *ui_push_text_input(UI_Context *ctx, String_U8_Const name, String_U8 *result);
 
 #endif //UI_H
