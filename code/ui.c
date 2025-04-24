@@ -531,14 +531,17 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   
   ui_text_colour_push(ctx, v4f_make(1, 1, 1, 1));
   
-  UI_Widget *root = ui_push_vlayout(ctx, str8("__main_container__"));
+  ui_size_x_next(ctx, ui_pixel_size(max_width));
+  ui_size_y_next(ctx, ui_children_sum_size(max_height));
+  UI_Widget *root = ui_push_widget(ctx, str8("__main_container__"), 0);
+  ui_parent_push(ctx, root);
   ctx->root = root;
 }
 
 function UI_Widget *
 ui_push_vlayout(UI_Context *ctx, String_U8_Const name)
 {
-  ui_size_x_next(ctx, ui_null_size());
+  //ui_size_x_next(ctx, ui_null_size());
   ui_size_y_next(ctx, ui_children_sum_size(0.0f));
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
@@ -551,7 +554,7 @@ function UI_Widget *
 ui_push_hlayout(UI_Context *ctx, String_U8_Const name)
 {
   ui_size_x_next(ctx, ui_children_sum_size(0.0f));
-  ui_size_y_next(ctx, ui_null_size());
+  //ui_size_y_next(ctx, ui_null_size());
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
                                      UI_Widget_Flag_BorderColour);
@@ -623,6 +626,7 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
   f32 accumulated_size = root->final_dims.v[axis];
   if (indie_size.type == UI_Widget_IndividualSizing_ChildrenSum)
   {
+    f32 child_size = 0.0f;
     for (UI_Widget *child = root->leftmost_child;
          child;
          child = child->next_sibling)
@@ -630,12 +634,21 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
       ui_calculate_downwards_dependent_sizes(child, axis);
       if (child->next_sibling)
       {
-        accumulated_size += child->final_dims.v[axis] + root->gap[axis];
+        child_size += child->final_dims.v[axis] + root->gap[axis];
+        //accumulated_size += child->final_dims.v[axis] + root->gap[axis];
       }
       else
       {
-        accumulated_size += child->final_dims.v[axis];
+        child_size += child->final_dims.v[axis];
+        //accumulated_size += child->final_dims.v[axis];
       }
+    }
+    
+    // only increase the size of the container if the children
+    // overflows it
+    if (child_size > accumulated_size)
+    {
+      accumulated_size = child_size;
     }
   }
   else
@@ -699,18 +712,28 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
 function void
 ui_render(UI_Context *ctx, UI_Widget *root)
 {
+  v2f final_dims = root->final_dims;
+  if (final_dims.x >= ctx->max_width)
+  {
+    final_dims.x = ctx->max_width;
+  }
+  if (final_dims.y >= ctx->max_height)
+  {
+    final_dims.y = ctx->max_height;
+  }
+  
   if (root->flags & (UI_Widget_Flag_BackgroundColour))
   {
-    ui_add_quad_per_vertex_colours(ctx->quads, root->final_p, root->final_dims,
+    ui_add_quad_per_vertex_colours(ctx->quads, root->final_p, final_dims,
                                    root->smoothness, root->vertex_roundness,
                                    root->tl_bg_colour, root->bl_bg_colour,
                                    root->tr_bg_colour, root->br_bg_colour,
                                    0.0f);
   }
   
-  if (root->flags & (UI_Widget_Flag_BorderColour))
+  if ((root->flags & (UI_Widget_Flag_BorderColour)) && (root->border_thickness > 0.0f))
   {
-    ui_add_quad_per_vertex_colours(ctx->quads, root->final_p, root->final_dims,
+    ui_add_quad_per_vertex_colours(ctx->quads, root->final_p, final_dims,
                                    root->smoothness, root->vertex_roundness,
                                    root->tl_border_colour, root->bl_border_colour,
                                    root->tr_border_colour, root->br_border_colour,

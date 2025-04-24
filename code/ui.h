@@ -129,6 +129,9 @@ return ui_##name##_peek(ctx);\
 }\
 }
 
+// TODO(cj): UI Improvements:
+// - BORDER BOX (LIKE CSS) ONLY SIZING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 #define UI_MaxStackSize 64
 #define UI_CacheSize 128
 typedef struct

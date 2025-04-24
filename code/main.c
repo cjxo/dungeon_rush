@@ -700,6 +700,7 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
     ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
     ui_vertex_roundness_next(ui_ctx, 8.0f);
     ui_smoothness_push(ui_ctx, 0.75f);
+    ui_size_y_next(ui_ctx, ui_percent_of_parent_size(1.0f));
     ui_push_hlayout(ui_ctx, str8("sidebar"));
     {
       //ui_gap_y_next(ui_ctx, 4.0f);

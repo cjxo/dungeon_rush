@@ -232,6 +232,6 @@ float4 ps_main(VertexShader_Output ps_inp) : SV_Target
 	}
 #endif
 	
-	if (final_colour.a == 0) discard;
+	//if (final_colour.a == 0) discard;
 	return(final_colour);
 }
