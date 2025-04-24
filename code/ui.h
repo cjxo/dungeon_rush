@@ -17,6 +17,7 @@ enum
   UI_Widget_IndividualSizing_Null,
   UI_Widget_IndividualSizing_ChildrenSum,
   UI_Widget_IndividualSizing_Pixels,
+  UI_Widget_IndividualSizing_PercentOfParent,
   UI_Widget_IndividualSizing_Count,
 };
 
@@ -279,6 +280,7 @@ ui_border_colour_next(UI_Context *ctx, v4f colour)
 inline function UI_Widget_IndividualSize ui_null_size(void);
 inline function UI_Widget_IndividualSize ui_pixel_size(f32 value);
 inline function UI_Widget_IndividualSize ui_children_sum_size(f32 initial_size);
+inline function UI_Widget_IndividualSize ui_percent_of_parent_size(f32 percent);
 
 // UI init
 function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font);
@@ -291,7 +293,7 @@ function UI_Widget *ui_push_hlayout(UI_Context *ctx, String_U8_Const name);
 function UI_Widget *ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...);
 function UI_Widget *ui_push_label(UI_Context *ctx, String_U8_Const str);
 function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
-//function UI_Widget *ui_push_progress_bar_with_stringf(UI_Context *ctx, f32 current_progress, f32 max_progress, String_U8_Const str, ...);
+//function UI_Widget *ui_push_progress_bar_with_stringf(UI_Context *ctx, f32 current_progress, v4f progress_colour, f32 max_progress, v4f border_colour, String_U8_Const str, ...);
 //function UI_Widget *ui_push_text_input(UI_Context *ctx, String_U8_Const name, String_U8 *result);
 
 #endif //UI_H

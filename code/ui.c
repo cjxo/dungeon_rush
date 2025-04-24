@@ -112,8 +112,8 @@ ui_query_string_dims(R_Font font, String_U8_Const str)
       {
         final_dims.y = glyph.clip_height;
       }
-      final_dims.x += glyph.advance;
     }
+    final_dims.x += glyph.advance;
   }
   return(final_dims);
 }
@@ -260,6 +260,28 @@ ui_children_sum_size(f32 initial_size)
   return(result);
 }
 
+inline function UI_Widget_IndividualSize
+ui_percent_of_parent_size(f32 percent)
+{
+  UI_Widget_IndividualSize result;
+  result.type = UI_Widget_IndividualSizing_PercentOfParent;
+  
+  if (percent > 1.0f)
+  {
+    result.value = 1.0f;
+  }
+  else if (percent < 0.0f)
+  {
+    result.value = 0.0f;
+  }
+  else
+  {
+    result.value = percent;
+  }
+  
+  return(result);
+}
+
 function UI_Context *
 ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font)
 {
@@ -349,9 +371,13 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
     result->str8_content = ui_extract_content_from_identifier(result->str8_identifier);
     result->rel_parent_p = v2f_make(0, 0);
     
-    MemoryClear(result->individual_size, sizeof(result->individual_size));
+    // TODO(cj): Should we instead let the me specify the dimensions of this
+    // widget with respect to the string? I mean look at this code.... 
     if (flags & UI_Widget_Flag_StringContent)
     {
+      UI_Widget_IndividualSize size_x = ui_size_x_peek_or_auto_pop(ctx);
+      UI_Widget_IndividualSize size_y = ui_size_y_peek_or_auto_pop(ctx);
+      
       v2f text_dims = ui_query_string_dims(ctx->font, result->str8_content);
       result->individual_size[UI_Axis_X].type = UI_Widget_IndividualSizing_Pixels;
       result->individual_size[UI_Axis_X].value = text_dims.x;
@@ -362,35 +388,41 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
         result->individual_size[UI_Axis_Y].value = ctx->font.ascent + ctx->font.descent;
       }
       
-      ui_size_x_peek_or_auto_pop(ctx);
-      ui_size_y_peek_or_auto_pop(ctx);
+      if (size_x.type != UI_Widget_IndividualSizing_Null)
+      {
+        result->individual_size[UI_Axis_X] = size_x;
+      }
+      if (size_y.type != UI_Widget_IndividualSizing_Null)
+      {
+        result->individual_size[UI_Axis_Y] = size_y;
+      }
     }
     else
     {
       result->individual_size[UI_Axis_X] = ui_size_x_peek_or_auto_pop(ctx);
       result->individual_size[UI_Axis_Y] = ui_size_y_peek_or_auto_pop(ctx);
     }
-  }
-  
-  if (ctx->parent_ptr > 0)
-  {
-    UI_Widget *top_parent = ui_parent_peek_or_auto_pop(ctx);
-    result->parent = top_parent;
-    if (top_parent->leftmost_child == 0)
+    
+    if (ctx->parent_ptr > 0)
     {
-      top_parent->leftmost_child = top_parent->rightmost_child = result;
+      UI_Widget *top_parent = ui_parent_peek_or_auto_pop(ctx);
+      result->parent = top_parent;
+      if (top_parent->leftmost_child == 0)
+      {
+        top_parent->leftmost_child = top_parent->rightmost_child = result;
+      }
+      else
+      {
+        Assert(top_parent->rightmost_child != 0);
+        top_parent->rightmost_child->next_sibling = result;
+        result->prev_sibling = top_parent->rightmost_child;
+        top_parent->rightmost_child = result;
+      }
     }
     else
     {
-      Assert(top_parent->rightmost_child != 0);
-      top_parent->rightmost_child->next_sibling = result;
-      result->prev_sibling = top_parent->rightmost_child;
-      top_parent->rightmost_child = result;
+      result->parent = 0;
     }
-  }
-  else
-  {
-    result->parent = 0;
   }
   
   result->padding[UI_Axis_X] = ui_padding_x_peek_or_auto_pop(ctx);
@@ -566,6 +598,12 @@ ui_calculate_standalone_sizes(UI_Widget *root, UI_AxisType axis)
     {
       indie = indie_size.value;
     } break;
+    
+    case UI_Widget_IndividualSizing_PercentOfParent:
+    {
+      Assert(root->parent);
+      indie = indie_size.value * root->parent->final_dims.v[axis];
+    } break;
   }
   
   root->final_dims.v[axis] = indie + root->border_thickness * 2;
@@ -582,7 +620,7 @@ function void
 ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
 {
   UI_Widget_IndividualSize indie_size = root->individual_size[axis];
-  f32 accumulated_size = 0.0f;
+  f32 accumulated_size = root->final_dims.v[axis];
   if (indie_size.type == UI_Widget_IndividualSizing_ChildrenSum)
   {
     for (UI_Widget *child = root->leftmost_child;
@@ -618,7 +656,7 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
     }
   }
   
-  root->final_dims.v[axis] += accumulated_size + root->padding[axis] * 2.0f;
+  root->final_dims.v[axis] = accumulated_size + root->padding[axis] * 2.0f;
 }
 
 function void
@@ -651,7 +689,8 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
          child;
          child = child->next_sibling)
     {
-      child->final_p.v[axis] = root->final_p.v[axis] + root->border_thickness + root->padding[axis];
+      child->rel_parent_p.v[axis] += root->border_thickness + root->padding[axis];
+      child->final_p.v[axis] = root->final_p.v[axis] + child->rel_parent_p.v[axis];
       ui_calculate_final_positions(child, axis);
     }
   }
