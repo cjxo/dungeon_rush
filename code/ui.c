@@ -396,6 +396,7 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
       {
         result->individual_size[UI_Axis_Y] = size_y;
       }
+      result->text_dims = text_dims;
     }
     else
     {
@@ -445,6 +446,8 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
   result->smoothness = ui_smoothness_peek_or_auto_pop(ctx);
   
   result->text_colour = ui_text_colour_peek_or_auto_pop(ctx);
+  result->text_centering[UI_Axis_X] = ui_text_centering_x_peek_or_auto_pop(ctx);
+  result->text_centering[UI_Axis_Y] = ui_text_centering_y_peek_or_auto_pop(ctx);
   
   Assert(result);
   return(result);
@@ -507,6 +510,8 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   ctx->br_border_colour_ptr = 0;
   ctx->smoothness_ptr = 0;
   ctx->text_colour_ptr = 0;
+  ctx->text_centering_x_ptr = 0;
+  ctx->text_centering_y_ptr = 0;
   
   ui_size_x_push(ctx, ui_null_size());
   ui_size_y_push(ctx, ui_null_size());
@@ -530,6 +535,9 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   ui_smoothness_push(ctx, 0.0f);
   
   ui_text_colour_push(ctx, v4f_make(1, 1, 1, 1));
+  
+  ui_text_centering_x_push(ctx, UI_Widget_TextCentering_Begin);
+  ui_text_centering_y_push(ctx, UI_Widget_TextCentering_Begin);
   
   ui_size_x_next(ctx, ui_pixel_size(max_width));
   ui_size_y_next(ctx, ui_children_sum_size(max_height));
@@ -601,12 +609,6 @@ ui_calculate_standalone_sizes(UI_Widget *root, UI_AxisType axis)
     {
       indie = indie_size.value;
     } break;
-    
-    case UI_Widget_IndividualSizing_PercentOfParent:
-    {
-      Assert(root->parent);
-      indie = indie_size.value * root->parent->final_dims.v[axis];
-    } break;
   }
   
   root->final_dims.v[axis] = indie + root->border_thickness * 2;
@@ -634,12 +636,12 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
       ui_calculate_downwards_dependent_sizes(child, axis);
       if (child->next_sibling)
       {
-        child_size += child->final_dims.v[axis] + root->gap[axis];
+        child_size += child->final_dims.v[axis] + root->gap[axis] + child->border_thickness*2;
         //accumulated_size += child->final_dims.v[axis] + root->gap[axis];
       }
       else
       {
-        child_size += child->final_dims.v[axis];
+        child_size += child->final_dims.v[axis] + child->border_thickness;
         //accumulated_size += child->final_dims.v[axis];
       }
     }
@@ -653,15 +655,12 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
   }
   else
   {
-    //
-    // TODO(cj): Consider padding and gap
-    //
     for (UI_Widget *child = root->leftmost_child;
          child;
          child = child->next_sibling)
     {
       ui_calculate_downwards_dependent_sizes(child, axis);
-      f32 child_size = child->final_dims.v[axis];
+      f32 child_size = child->final_dims.v[axis] + child->border_thickness;
       if (child_size > accumulated_size)
       {
         accumulated_size = child_size;
@@ -673,15 +672,54 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
 }
 
 function void
+ui_calculate_upwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
+{
+  UI_Widget_IndividualSize indie_size = root->individual_size[axis];
+  f32 indie = 0.0f;
+  switch (indie_size.type)
+  {
+    case UI_Widget_IndividualSizing_PercentOfParent:
+    {
+      Assert(root->parent);
+      // TODO(cj): Figure out why the heck is the times three?
+      indie = indie_size.value * (root->parent->final_dims.v[axis] - root->parent->padding[axis] * 3);
+    } break;
+  }
+  
+  root->final_dims.v[axis] += indie;
+  
+  for (UI_Widget *widget = root->leftmost_child;
+       widget;
+       widget = widget->next_sibling)
+  {
+    ui_calculate_upwards_dependent_sizes(widget, axis);
+  }
+}
+
+function void
 ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
 {
+#if 1
+  if (root->flags & UI_Widget_Flag_StringContent)
+  {
+    root->rel_text_p.v[axis] = root->padding[axis];
+    switch (root->text_centering[axis])
+    {
+      case UI_Widget_TextCentering_Center:
+      {
+        // TODO(cj): Figure out why the heck is the times three?
+        f32 size = root->final_dims.v[axis];
+        root->rel_text_p.v[axis] += (size - root->text_dims.v[axis])*0.5f;
+      } break;
+    }
+    root->final_text_p.v[axis] = root->final_p.v[axis] + root->rel_text_p.v[axis];
+  }
+#endif
+  
   UI_Widget_IndividualSize indie_size = root->individual_size[axis];
   f32 accumulated_p = 0.0f;
   if (indie_size.type == UI_Widget_IndividualSizing_ChildrenSum)
   {
-    //
-    // TODO(cj): Consider padding and gap
-    //
     for (UI_Widget *child = root->leftmost_child;
          child;
          child = child->next_sibling)
@@ -740,9 +778,9 @@ ui_render(UI_Context *ctx, UI_Widget *root)
                                    root->border_thickness);
   }
   
-  if (root->flags & UI_Widget_Flag_StringContent)
+  if ((root->flags & UI_Widget_Flag_StringContent) && (root->text_colour.w != 0.0f))
   {
-    ui_add_string(ctx->quads, ctx->font, root->final_p, root->text_colour, root->str8_content);
+    ui_add_string(ctx->quads, ctx->font, root->final_text_p, root->text_colour, root->str8_content);
   }
   
   for (UI_Widget *child = root->leftmost_child;
@@ -761,10 +799,12 @@ ui_end(UI_Context *ctx)
   // NOTE(cj): layout
   ui_calculate_standalone_sizes(ctx->root, UI_Axis_X);
   ui_calculate_downwards_dependent_sizes(ctx->root, UI_Axis_X);
+  ui_calculate_upwards_dependent_sizes(ctx->root, UI_Axis_X);
   ui_calculate_final_positions(ctx->root, UI_Axis_X);
   
   ui_calculate_standalone_sizes(ctx->root, UI_Axis_Y);
   ui_calculate_downwards_dependent_sizes(ctx->root, UI_Axis_Y);
+  ui_calculate_upwards_dependent_sizes(ctx->root, UI_Axis_Y);
   ui_calculate_final_positions(ctx->root, UI_Axis_Y);
   
   // SOON:

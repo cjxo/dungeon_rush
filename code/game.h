@@ -41,13 +41,16 @@ typedef struct
 typedef u32 AnimationFrame_For;
 enum
 {
-  // ents
+  // entities
   AnimationFrames_PlayerWalk,
   AnimationFrames_GreenSkullWalk,
   
   // attacks
   AnimationFrames_ShadowSlash,
   AnimationFrames_Bite,
+  
+  // consumables
+  AnimationFrames_HealthPotion,
   
   AnimationFrames_Count,
 };
@@ -105,6 +108,53 @@ typedef struct
   Attack attack;
 } Enemy;
 
+typedef u64 Consumable_Type;
+enum
+{
+  ConsumableType_HealthPotion,
+  ConsumableType_Count,
+};
+
+typedef struct
+{
+  Consumable_Type type;
+  v3f p, dims;
+  Animation_Config animation;
+} Consumable;
+
+typedef u64 StatusEffect_Type;
+enum
+{
+  StatusEffectType_Healing,
+  StatusEffectType_Count,
+};
+typedef struct
+{
+  StatusEffect_Type type;
+  
+  // this value depends on the type.
+  f32 intensity;
+  
+  // this counts down to zero.
+  f32 duration_left_secs;
+} StatusEffect;
+
+#if 0
+// alternate definition of a consumable...
+// just define its status effect.......... (and store multiple properties
+// of that effect, which is bad.... or maybe there is a way around this?......)
+typedef struct
+{
+  v3f p, dims;
+  
+  StatusEffect_Type status_effect;
+  f32 intensity;
+  
+  AnimationFrame_For animation_type;
+  Animation_Config animation;
+} Consumable;
+#endif
+
 typedef struct Entity Entity;
 struct Entity
 {
@@ -134,13 +184,26 @@ typedef struct
   R_InputForRendering *renderer;
 } Game_Memory;
 
+#define DefineStaticArray(T, name, cap)\
+u64 name##_count;\
+T name[cap]
+
 typedef struct
 {
   PRNG32 prng;
   
+  //DefineStaticArray(Entity, entities, 512);
   u64 entity_count;
   Entity entities[512];
   
+  u64 consumables_count;
+  Consumable consumables[32];
+  
+  // NOTE(cj): player status effects.
+  u64 status_effects_count;
+  StatusEffect status_effects[8];
+  
+  // NOTE(cj): Wave spawner variables
   u32 wave_number;
   f32 next_wave_cooldown_timer;
   f32 next_wave_cooldown_max;
@@ -148,6 +211,10 @@ typedef struct
   u32 max_enemies_to_spawn;
   f32 skull_enemy_spawn_timer_sec;
   f32 spawn_cooldown;
+  
+  // NOTE(cj): Consumable spawner variables
+  f32 consumable_spawn_timer_sec;
+  f32 consumable_spawn_cooldown;
   
 #if defined(DR_DEBUG)
   b32 dbg_draw_entity_wires;

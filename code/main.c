@@ -140,6 +140,30 @@ make_enemy_green_skull(Game_State *game, v3f p)
   return(result);
 }
 
+function Consumable *
+make_health_potion(Game_State *game, v3f p, v3f dims)
+{
+  Assert(game->consumables_count < ArrayCount(game->consumables));
+  Consumable *result = game->consumables + game->consumables_count++;
+  result->type = ConsumableType_HealthPotion;
+  result->p = p;
+  result->dims = dims;
+  result->animation = create_animation_config(0.1f);
+  return(result);
+}
+
+function StatusEffect *
+make_healing_status_effect(Game_State *game, StatusEffect_Type type,
+                           f32 intensity, f32 countdown_secs)
+{
+  Assert(game->status_effects_count < ArrayCount(game->status_effects));
+  StatusEffect *result = game->status_effects + game->status_effects_count++;
+  result->type = type;
+  result->intensity = intensity;
+  result->duration_left_secs = countdown_secs;
+  return(result);
+}
+
 function Animation_Frames
 get_animation_frames(AnimationFrame_For frame_for)
 {
@@ -147,6 +171,10 @@ get_animation_frames(AnimationFrame_For frame_for)
   
   Animation_Frames result={0};
   
+  
+  //////////////
+  // entities //
+  //////////////
   static Animation_Frame player_walk[] =
   {
     {{0.0f,16.0f},{16.0f,16.0f},},
@@ -163,7 +191,9 @@ get_animation_frames(AnimationFrame_For frame_for)
     {{112.0f,0.0f},{16.0f,16.0f}},
   };
   
-  // 
+  /////////////
+  // attacks //
+  /////////////
   static Animation_Frame shadow_slash_attack[] =
   {
     {{0.0f,32.0f},{32.0f,32.0f},{-11.0f,-13.0f},},
@@ -180,12 +210,24 @@ get_animation_frames(AnimationFrame_For frame_for)
     {{192.0f, 64.0f},{64.0f,48.0f},},
   };
   
+  /////////////////
+  // consumables //
+  /////////////////
+  static Animation_Frame health_potion_consumable[] =
+  {
+    {{192.0f,0.0f},{16.0f,16.0f},},
+    {{208.0f,0.0f},{16.0f,16.0f},},
+    {{224.0f,0.0f},{16.0f,16.0f},},
+    {{240.0f,0.0f},{16.0f,16.0f},},
+  };
+  
   static Animation_Frames table[] =
   {
     [AnimationFrames_PlayerWalk] = { player_walk, ArrayCount(player_walk) },
     [AnimationFrames_GreenSkullWalk] = { green_skull_walk, ArrayCount(green_skull_walk) },
     [AnimationFrames_ShadowSlash] = { shadow_slash_attack, ArrayCount(shadow_slash_attack) },
     [AnimationFrames_Bite] = { bite_attack, ArrayCount(bite_attack) },
+    [AnimationFrames_HealthPotion] = { health_potion_consumable, ArrayCount(health_potion_consumable) },
   };
   
   result = table[frame_for];
@@ -235,6 +277,11 @@ game_init(Game_State *game)
   game->max_enemies_to_spawn = 10;
   game->skull_enemy_spawn_timer_sec = 0.0f;
   game->spawn_cooldown = 2.0f;
+  
+  //
+  // NOTE(cj): Consumable stuff
+  //
+  game->consumable_spawn_cooldown = 7.0f;
 }
 
 function Animation_Tick_Result
@@ -312,6 +359,9 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
   // the player is always at 0th idx
   Entity *player = game->entities;
   
+  //
+  // NOTE(cj): Wave Logic/Enemy spawning
+  //
   if (game->next_wave_cooldown_timer <= game->next_wave_cooldown_max)
   {
     if (game->entity_count == 1)
@@ -415,6 +465,47 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
     }
   }
   
+  
+  //
+  // TODO(cj): Should Consumables be generated entities?
+  //
+  
+  //
+  // NOTE(cj): Consumable spawning
+  //
+  if (game->consumables_count < ArrayCount(game->consumables))
+  {
+    if (game->consumable_spawn_timer_sec > game->consumable_spawn_cooldown)
+    {
+      game->consumable_spawn_timer_sec = 0.0f;
+      // TODO(cj): We need to define the maximum bounds of the entire game
+      // arena. Hence, the spawn position must be within those bounds.
+      f32 what_is_this_x = 1024.0f;
+      f32 what_is_this_y = 1024.0f;
+      
+      f32 x_weight = prng32_nextf32(&game->prng) * 2.0f - 1.0f;
+      f32 y_weight = prng32_nextf32(&game->prng) * 2.0f - 1.0f;
+      make_health_potion(game, v3f_make(x_weight*what_is_this_x, y_weight*what_is_this_y, 0), v3f_make(32, 32, 0));
+    }
+    else
+    {
+      game->consumable_spawn_timer_sec += game_update_secs;
+    }
+  }
+  
+  //
+  // NOTE(cj): Update consumables
+  // 
+  ForLoopU64(consumable_idx, game->consumables_count)
+  {
+    Consumable *consumable = game->consumables + consumable_idx;
+    Animation_Frame consumable_frame = tick_animation(&consumable->animation,
+                                                      get_animation_frames(AnimationFrames_HealthPotion),
+                                                      game_update_secs).frame;
+    game_add_tex_clipped(&renderer->filled_quads, consumable->p, consumable->dims,
+                         consumable_frame.clip_p, consumable_frame.clip_dims, v4f_make(1,1,1,1), 0);
+  }
+  
   // hehehehehhehe... my mind just randomly told me to try this...
   // dont mind me.
   ForLoopU64(entity_idx, game->entity_count)
@@ -461,6 +552,45 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
         entity->p.x += desired_move_x;
         entity->p.y += desired_move_y;
         
+        //
+        // NOTE(cj): Update status effects
+        //
+        ForLoopU64(status_effect_idx, game->status_effects_count)
+        {
+          StatusEffect *status_effect = game->status_effects + status_effect_idx;
+          if (status_effect->duration_left_secs <= 0.0f)
+          {
+            if (status_effect_idx != (game->status_effects_count - 1))
+            {
+              game->consumables[status_effect_idx--] = game->consumables[game->status_effects_count - 1];
+            }
+            --game->status_effects_count;
+          }
+          else
+          {
+            u32 prev_duration = (u32)status_effect->duration_left_secs;
+            status_effect->duration_left_secs -= game_update_secs;
+            u32 next_duration = (u32)status_effect->duration_left_secs;
+            
+            switch (status_effect->type)
+            {
+              case StatusEffectType_Healing:
+              {
+                if (prev_duration != next_duration)
+                {
+                  player->current_hp += status_effect->intensity;
+                  if (player->current_hp > player->max_hp)
+                  {
+                    player->current_hp = player->max_hp;
+                  }
+                }
+              } break;
+              
+              InvalidDefaultCase();
+            }
+            
+          }
+        }
         
         //
         // NOTE(cj): Render HP 
@@ -576,6 +706,41 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
           }
         }
         
+        // NOTE(cj): Check if player collides to a consumable
+        ForLoopU64(consumable_idx, game->consumables_count)
+        {
+          Consumable *consumable = game->consumables + consumable_idx;
+          b32 collided = check_aabb_collision_xy(player->p.xy,
+                                                 (v2f)
+                                                 {
+                                                   player->dims.x*0.5f,
+                                                   player->dims.y*0.5f,
+                                                 },
+                                                 consumable->p.xy,
+                                                 (v2f){consumable->dims.x*0.5f, consumable->dims.y*0.5f});
+          //
+          // NOTE(cj): If collided, then add a status effect with respect
+          // to the consumable, and remove it from the array of consumables
+          //
+          if (collided)
+          {
+            switch (consumable->type)
+            {
+              case ConsumableType_HealthPotion:
+              {
+                make_healing_status_effect(game, StatusEffectType_Healing, 2.0f, 5.0f);
+              } break;
+              InvalidDefaultCase();
+            }
+            if (consumable_idx != (game->consumables_count - 1))
+            {
+              game->consumables[consumable_idx--] = game->consumables[game->consumables_count - 1];
+            }
+            --game->consumables_count;
+            
+            break;
+          }
+        }
       } break;
       
       case EntityType_GreenSkull:
@@ -693,70 +858,91 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
   ui_begin(ui_ctx, renderer->reso_width, renderer->reso_height, game_update_secs);
   {
     ui_border_thickness_push(ui_ctx, 1.0f);
-    ui_gap_x_next(ui_ctx, 16.0f);
     ui_padding_x_next(ui_ctx, 14.0f);
     ui_padding_y_next(ui_ctx, 14.0f);
     ui_bg_colour_next(ui_ctx, rgba(37,33,49,1));
     ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
     ui_vertex_roundness_next(ui_ctx, 8.0f);
     ui_smoothness_push(ui_ctx, 0.75f);
-    ui_size_y_next(ui_ctx, ui_percent_of_parent_size(1.0f));
-    ui_push_hlayout(ui_ctx, str8("sidebar"));
+    //ui_size_y_next(ui_ctx, ui_percent_of_parent_size(1.0f));
+    ui_push_vlayout(ui_ctx, str8("main-sidebar"));
     {
-      //ui_gap_y_next(ui_ctx, 4.0f);
-      //ui_bg_transparent_next(ui_ctx);
-      ui_push_vlayout(ui_ctx, str8("left-side"));
-      {
-        ui_push_label(ui_ctx, str8("Wave:"));
-        ui_push_label(ui_ctx, str8("Enemies Alive:"));
-        ui_push_label(ui_ctx, str8("Health:"));
-        ui_push_label(ui_ctx, str8("Experience:"));
-        ui_push_label(ui_ctx, str8("Player P:"));
-      }
-      ui_vlayout_pop(ui_ctx);
+      ui_size_x_next(ui_ctx, ui_percent_of_parent_size(1.0f));
+      ui_padding_x_next(ui_ctx, 4.0f);
+      ui_padding_y_next(ui_ctx, 4.0f);
+      ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
+      ui_text_centering_x_next(ui_ctx, UI_Widget_TextCentering_Center);
+      ui_push_label(ui_ctx, str8("side-label###Player"));
       
-      f32 bar_dims = 200;
-      //ui_gap_y_next(ui_ctx, 4.0f);
-      ui_push_vlayout(ui_ctx, str8("right-side"));
+      ui_gap_x_next(ui_ctx, 16.0f);
+      ui_push_hlayout(ui_ctx, str8("player-section"));
       {
-        ui_push_labelf(ui_ctx, str8("WaveNum###%u"), game->wave_number);
-        ui_push_labelf(ui_ctx, str8("EntityCount###%u"), game->entity_count - 1);
-        
-        // TODO(cj): YIKES. This is ugly. We need to find a way to do this nicely.
-        // Should we add a Progress Bar in the UI Library, or just find a way to "create" a progress
-        // bar using primitives such as these? 
-        ui_border_thickness_push(ui_ctx, 0.0f);
-        ui_bg_colour_next(ui_ctx, rgba(113,29,56,1));
-        ui_size_push(ui_ctx, ui_pixel_size(bar_dims), ui_pixel_size(25.0f));
-        ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8("player-health-border"), UI_Widget_Flag_BackgroundColour));
-        ui_size_pop(ui_ctx);
+        ui_push_vlayout(ui_ctx, str8("player-section-left-side"));
         {
-          f32 health_fill_percent = player->current_hp / player->max_hp;
-          ui_size_push(ui_ctx, ui_percent_of_parent_size(health_fill_percent), ui_percent_of_parent_size(1.0f));
-          ui_bg_colour_next(ui_ctx, rgba(224,120,86,1.0f));
-          ui_push_labelf(ui_ctx, str8("player-hp###%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
-          ui_size_pop(ui_ctx);
+          ui_push_label(ui_ctx, str8("Wave:"));
+          ui_push_label(ui_ctx, str8("Enemies Alive:"));
+          ui_push_label(ui_ctx, str8("Health:"));
+          ui_push_label(ui_ctx, str8("Experience:"));
         }
+        ui_vlayout_pop(ui_ctx);
         
-        ui_bg_colour_next(ui_ctx, rgba(64,29,112,1));
-        ui_size_push(ui_ctx, ui_pixel_size(bar_dims), ui_pixel_size(25.0f));
-        ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8("player-exp-border"), UI_Widget_Flag_BackgroundColour));
-        ui_size_pop(ui_ctx);
+        //ui_border_colour_next(ui_ctx, rgba(255,33,0,1));
+        f32 bar_dims = 200;
+        ui_push_vlayout(ui_ctx, str8("player-section-right-side"));
         {
-          f32 exp_fill_percent = (f32)player->player.current_experience / (f32)player->player.max_experience;
-          ui_size_push(ui_ctx, ui_percent_of_parent_size(exp_fill_percent), ui_percent_of_parent_size(1.0f));
-          ui_bg_colour_next(ui_ctx, rgba(85,108,224,1.0f));
-          ui_push_labelf(ui_ctx, str8("player-exp###%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
+          ui_push_labelf(ui_ctx, str8("WaveNum###%u"), game->wave_number);
+          ui_push_labelf(ui_ctx, str8("EntityCount###%u"), game->entity_count - 1);
+          
+          //ui_push_progress_stringf(ui_ctx, bar_dims, player->current_hp, rgba(224,120,86,1.0f), player->max_hp, rgba(113,29,56,1), str8("player-health"));
+          // TODO(cj): YIKES. This is ugly. We need to find a way to do this nicely.
+          // Should we add a Progress Bar in the UI Library, or just find a way to "create" a progress
+          // bar using primitives such as these? 
+          ui_border_thickness_push(ui_ctx, 0.0f);
+          ui_bg_colour_next(ui_ctx, rgba(113,29,56,1));
+          ui_size_push(ui_ctx, ui_pixel_size(bar_dims), ui_pixel_size(25.0f));
+          ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8("player-health-border"), UI_Widget_Flag_BackgroundColour));
           ui_size_pop(ui_ctx);
+          {
+            f32 health_fill_percent = player->current_hp / player->max_hp;
+            ui_size_x_next(ui_ctx, ui_percent_of_parent_size(health_fill_percent));
+            ui_bg_colour_next(ui_ctx, rgba(224,120,86,1.0f));
+            ui_push_labelf(ui_ctx, str8("player-hp###%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
+          }
+          
+          ui_bg_colour_next(ui_ctx, rgba(64,29,112,1));
+          ui_size_push(ui_ctx, ui_pixel_size(bar_dims), ui_pixel_size(25.0f));
+          ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8("player-exp-border"), UI_Widget_Flag_BackgroundColour));
+          ui_size_pop(ui_ctx);
+          {
+            f32 exp_fill_percent = (f32)player->player.current_experience / (f32)player->player.max_experience;
+            ui_size_x_next(ui_ctx, ui_percent_of_parent_size(exp_fill_percent));
+            ui_bg_colour_next(ui_ctx, rgba(85,108,224,1.0f));
+            ui_push_labelf(ui_ctx, str8("player-exp###%u / %u"), (u32)player->player.current_experience, (u32)player->player.max_experience);
+          }
+          
+          ui_border_thickness_pop(ui_ctx);
+          
+          //ui_push_labelf(ui_ctx, str8("PlayerP###<%.2f, %.2f>"), player->p.x, player->p.y);
+          //ui_push_labelf(ui_ctx, str8("Consumable###%.2f / %.2f"), game->consumable_spawn_timer_sec, game->consumable_spawn_cooldown);
         }
-        
-        ui_border_thickness_pop(ui_ctx);
-        
-        ui_push_labelf(ui_ctx, str8("PlayerP###<%.2f, %.2f>"), player->p.x, player->p.y);
+        ui_vlayout_pop(ui_ctx);
       }
-      ui_vlayout_pop(ui_ctx);
+      ui_hlayout_pop(ui_ctx);
+      
+      ui_size_x_next(ui_ctx, ui_percent_of_parent_size(1.0f));
+      ui_padding_x_next(ui_ctx, 4.0f);
+      ui_padding_y_next(ui_ctx, 4.0f);
+      ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
+      ui_text_centering_x_next(ui_ctx, UI_Widget_TextCentering_Center);
+      ui_push_label(ui_ctx, str8("side-label###TODO: Status Effects"));
+      
+      ui_gap_x_next(ui_ctx, 16.0f);
+      ui_push_hlayout(ui_ctx, str8("status-effects-section"));
+      {
+      }
+      ui_hlayout_pop(ui_ctx);
     }
-    ui_hlayout_pop(ui_ctx);
+    ui_vlayout_pop(ui_ctx);
   }
   ui_end(ui_ctx);
 }
@@ -790,7 +976,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
   r_init(&renderer, window, memory.arena);
   memory.renderer = &renderer.input_for_rendering;
   
-  Game_State game = {0};
+  Game_State game = {0};//M_Arena_PushStruct(memory.arena, Game_State);
   game_init(&game);
   
   UI_Context *ui_ctx = ui_create_context(&window.input, &renderer.input_for_rendering.ui_quads, renderer.input_for_rendering.font);

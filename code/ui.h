@@ -27,6 +27,14 @@ typedef struct
   f32 value;
 } UI_Widget_IndividualSize;
 
+typedef u64 UI_Widget_TextCenteringType;
+enum
+{
+  UI_Widget_TextCentering_Begin,
+  UI_Widget_TextCentering_Center,
+  UI_Widget_TextCentering_Count,
+};
+
 typedef u64 UI_AxisType;
 enum
 {
@@ -60,12 +68,16 @@ struct UI_Widget
   String_U8_Const str8_content;
   
   // NOTE(cj): used for computing layout
+  v2f rel_text_p;
   v2f rel_parent_p;
   f32 padding[UI_Axis_Count];
   f32 gap[UI_Axis_Count];
   UI_Widget_IndividualSize individual_size[UI_Axis_Count];
+  UI_Widget_TextCenteringType text_centering[UI_Axis_Count];
+  v2f text_dims;
   
   // NOTE(cj): final calculation
+  v2f final_text_p;
   v2f final_p;
   v2f final_dims;
   
@@ -187,6 +199,8 @@ typedef struct
   
   UI_DefineStack(f32, smoothness);
   
+  UI_DefineStack(UI_Widget_TextCenteringType, text_centering_x);
+  UI_DefineStack(UI_Widget_TextCenteringType, text_centering_y);
   UI_DefineStack(v4f, text_colour);
 } UI_Context;
 
@@ -214,6 +228,8 @@ UI_DefineStackFN(v4f, br_border_colour);
 
 UI_DefineStackFN(f32, smoothness);
 
+UI_DefineStackFN(UI_Widget_TextCenteringType, text_centering_x);
+UI_DefineStackFN(UI_Widget_TextCenteringType, text_centering_y);
 UI_DefineStackFN(v4f, text_colour);
 
 inline function void
