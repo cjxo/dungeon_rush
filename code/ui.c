@@ -78,9 +78,11 @@ ui_add_tex(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v4f colour)
 }
 
 inline function R_UI_Quad *
-ui_add_tex_clipped(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims, v4f colour)
+ui_add_tex_clipped_per_vertex_colours(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims,
+                                      v4f vertex_top_left_c, v4f vertex_bottom_left_c,
+                                      v4f vertex_top_right_c, v4f vertex_bottom_right_c)
 {
-  R_UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, colour, colour, colour, colour, 0.0f);
+  R_UI_Quad *result = ui_add_quad_per_vertex_colours(quads, p, dims, 0.0f, 0.0f, vertex_top_left_c, vertex_bottom_left_c, vertex_top_right_c, vertex_bottom_right_c, 0.0f);
   
   f32 x_start = clip_p.x / (f32)tex.width;
   f32 x_end = (clip_p.x + clip_dims.x) / (f32)tex.width;
@@ -93,6 +95,14 @@ ui_add_tex_clipped(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v2f 
   result->uvs[3] = (v2f){ x_end, y_end };
   
   result->tex_id = tex.id;
+  return(result);
+}
+
+inline function R_UI_Quad *
+ui_add_tex_clipped(R_UI_QuadArray *quads, R_Texture2D tex, v2f p, v2f dims, v2f clip_p, v2f clip_dims, v4f colour)
+{
+  R_UI_Quad *result = ui_add_tex_clipped_per_vertex_colours(quads, tex, p, dims, clip_p, clip_dims,
+                                                            colour, colour, colour, colour);
   return(result);
 }
 
@@ -225,6 +235,15 @@ ui_add_string(R_UI_QuadArray *quads, R_Font font, v2f p, v4f colour, String_U8_C
   return(final_dims);
 }
 
+inline function UI_TextureClipped
+ui_texture(v2f clip_p, v2f clip_dims)
+{
+  UI_TextureClipped result;
+  result.clip_p = clip_p;
+  result.clip_dims = clip_dims;
+  return(result);
+}
+
 inline function UI_Key
 ui_zero_key(void)
 {
@@ -260,30 +279,56 @@ ui_children_sum_size(f32 initial_size)
   return(result);
 }
 
-inline function UI_Widget_IndividualSize
-ui_percent_of_parent_size(f32 percent)
+inline function f32
+ensure_normalized(f32 x)
 {
-  UI_Widget_IndividualSize result;
-  result.type = UI_Widget_IndividualSizing_PercentOfParent;
-  
-  if (percent > 1.0f)
+  f32 result;
+  if (x > 1.0f)
   {
-    result.value = 1.0f;
+    result = 1.0f;
   }
-  else if (percent < 0.0f)
+  else if (x < 0.0f)
   {
-    result.value = 0.0f;
+    result = 0.0f;
   }
   else
   {
-    result.value = percent;
+    result = x;
   }
   
   return(result);
 }
 
+inline function UI_Widget_IndividualSize
+ui_percent_of_parent_size(f32 percent)
+{
+  UI_Widget_IndividualSize result;
+  result.type = UI_Widget_IndividualSizing_PercentOfParent;
+  result.value = ensure_normalized(percent);
+  
+  return(result);
+}
+
+inline function UI_Absolute_Position
+ui_absolute_pixels(f32 v)
+{
+  UI_Absolute_Position result;
+  result.metric = UI_Metric_Pixels;
+  result.value = v;
+  return(result);
+}
+
+inline function UI_Absolute_Position
+ui_absolute_percent(f32 v)
+{
+  UI_Absolute_Position result;
+  result.metric = UI_Metric_Percent;
+  result.value = ensure_normalized(v);
+  return(result);
+}
+
 function UI_Context *
-ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font)
+ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font, R_Texture2D sprite_sheet)
 {
   M_Arena *arena = m_arena_reserve(MB(2));
   UI_Context *result = M_Arena_PushStruct(arena, UI_Context);
@@ -297,6 +342,7 @@ ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font)
   result->input = input;
   result->quads = quads;
   result->font = font;
+  result->sprite_sheet = sprite_sheet;
   result->dt_step_secs = 0;
   result->hot = ui_zero_key();
   result->active = ui_zero_key();
@@ -431,6 +477,12 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
   result->gap[UI_Axis_X] = ui_gap_x_peek_or_auto_pop(ctx);
   result->gap[UI_Axis_Y] = ui_gap_y_peek_or_auto_pop(ctx);
   
+  result->position = ui_position_peek_or_auto_pop(ctx);
+  result->absolute_p[UI_Axis_X] = ui_absolute_x_peek_or_auto_pop(ctx);
+  result->absolute_p[UI_Axis_Y] = ui_absolute_y_peek_or_auto_pop(ctx);
+  
+  result->texture = ui_texture_peek_or_auto_pop(ctx);
+  
   result->vertex_roundness = ui_vertex_roundness_peek_or_auto_pop(ctx);
   result->tl_bg_colour = ui_tl_bg_colour_peek_or_auto_pop(ctx);
   result->bl_bg_colour = ui_bl_bg_colour_peek_or_auto_pop(ctx);
@@ -494,8 +546,12 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   ctx->parent_ptr = 0;
   ctx->size_x_ptr = 0;
   ctx->size_y_ptr = 0;
+  ctx->position_ptr = 0;
+  ctx->absolute_x_ptr = 0;
+  ctx->absolute_y_ptr = 0;
   ctx->padding_x_ptr = 0;
   ctx->padding_y_ptr = 0;
+  ctx->texture_ptr = 0;
   ctx->gap_x_ptr = 0;
   ctx->gap_y_ptr = 0;
   ctx->vertex_roundness_ptr = 0;
@@ -515,6 +571,11 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   
   ui_size_x_push(ctx, ui_null_size());
   ui_size_y_push(ctx, ui_null_size());
+  ui_position_push(ctx, UI_Widget_Position_Normal);
+  ui_absolute_x_push(ctx, ui_absolute_pixels(0.0f));
+  ui_absolute_y_push(ctx, ui_absolute_pixels(0.0f));
+  
+  ui_texture_push(ctx, (UI_TextureClipped){});
   
   ui_padding_x_push(ctx, 0.0f);
   ui_padding_y_push(ctx, 0.0f);
@@ -547,10 +608,14 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
 }
 
 function UI_Widget *
-ui_push_vlayout(UI_Context *ctx, String_U8_Const name)
+ui_push_vlayout(UI_Context *ctx, f32 init_height, v2f padding, v2f gap, String_U8_Const name)
 {
   //ui_size_x_next(ctx, ui_null_size());
-  ui_size_y_next(ctx, ui_children_sum_size(0.0f));
+  ui_padding_x_next(ctx, padding.x);
+  ui_padding_y_next(ctx, padding.y);
+  ui_gap_x_next(ctx, gap.x);
+  ui_gap_y_next(ctx, gap.y);
+  ui_size_y_next(ctx, ui_children_sum_size(init_height));
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
                                      UI_Widget_Flag_BorderColour);
@@ -559,9 +624,13 @@ ui_push_vlayout(UI_Context *ctx, String_U8_Const name)
 }
 
 function UI_Widget *
-ui_push_hlayout(UI_Context *ctx, String_U8_Const name)
+ui_push_hlayout(UI_Context *ctx, f32 init_width, v2f padding, v2f gap, String_U8_Const name)
 {
-  ui_size_x_next(ctx, ui_children_sum_size(0.0f));
+  ui_padding_x_next(ctx, padding.x);
+  ui_padding_y_next(ctx, padding.y);
+  ui_gap_x_next(ctx, gap.x);
+  ui_gap_y_next(ctx, gap.y);
+  ui_size_x_next(ctx, ui_children_sum_size(init_width));
   //ui_size_y_next(ctx, ui_null_size());
   UI_Widget *result = ui_push_widget(ctx, name,
                                      UI_Widget_Flag_BackgroundColour |
@@ -594,6 +663,18 @@ ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...)
   UI_Widget *result = ui_push_label(ctx, format);
   
   end_temporary_memory(temp);
+  return(result);
+}
+
+function UI_Widget *
+ui_push_texture(UI_Context *ctx, UI_TextureClipped texture, f32 width, f32 height, String_U8_Const str)
+{
+  ui_size_x_next(ctx, ui_pixel_size(width));
+  ui_size_y_next(ctx, ui_pixel_size(height));
+  ui_texture_next(ctx, texture);
+  UI_Widget *result = ui_push_widget(ctx, str,
+                                     UI_Widget_Flag_BackgroundColour |
+                                     UI_Widget_Flag_Texture);
   return(result);
 }
 
@@ -634,15 +715,18 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
          child = child->next_sibling)
     {
       ui_calculate_downwards_dependent_sizes(child, axis);
-      if (child->next_sibling)
+      if (child->position == UI_Widget_Position_Normal)
       {
-        child_size += child->final_dims.v[axis] + root->gap[axis] + child->border_thickness*2;
-        //accumulated_size += child->final_dims.v[axis] + root->gap[axis];
-      }
-      else
-      {
-        child_size += child->final_dims.v[axis] + child->border_thickness;
-        //accumulated_size += child->final_dims.v[axis];
+        if (child->next_sibling)
+        {
+          child_size += child->final_dims.v[axis] + root->gap[axis] + child->border_thickness*2;
+          //accumulated_size += child->final_dims.v[axis] + root->gap[axis];
+        }
+        else
+        {
+          child_size += child->final_dims.v[axis] + child->border_thickness;
+          //accumulated_size += child->final_dims.v[axis];
+        }
       }
     }
     
@@ -660,10 +744,13 @@ ui_calculate_downwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
          child = child->next_sibling)
     {
       ui_calculate_downwards_dependent_sizes(child, axis);
-      f32 child_size = child->final_dims.v[axis] + child->border_thickness;
-      if (child_size > accumulated_size)
+      if (child->position == UI_Widget_Position_Normal)
       {
-        accumulated_size = child_size;
+        f32 child_size = child->final_dims.v[axis] + child->border_thickness;
+        if (child_size > accumulated_size)
+        {
+          accumulated_size = child_size;
+        }
       }
     }
   }
@@ -697,9 +784,33 @@ ui_calculate_upwards_dependent_sizes(UI_Widget *root, UI_AxisType axis)
 }
 
 function void
+ui_calculate_absolute_p_if_absolute(UI_Widget *widget, UI_AxisType axis)
+{
+  if (widget->position == UI_Widget_Position_Absolute)
+  {
+    UI_Absolute_Position pos = widget->absolute_p[axis];
+    switch (pos.metric)
+    {
+      case UI_Metric_Pixels:
+      {
+        widget->rel_parent_p.v[axis] += pos.value;
+      } break;
+      
+      case UI_Metric_Percent:
+      {
+        Assert(widget->parent);
+        f32 value = pos.value * (widget->parent->final_dims.v[axis] - widget->parent->padding[axis]*2);
+        widget->rel_parent_p.v[axis] += value;
+      } break;
+      
+      InvalidDefaultCase();
+    }
+  }
+}
+
+function void
 ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
 {
-#if 1
   if (root->flags & UI_Widget_Flag_StringContent)
   {
     root->rel_text_p.v[axis] = root->padding[axis];
@@ -707,14 +818,12 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
     {
       case UI_Widget_TextCentering_Center:
       {
-        // TODO(cj): Figure out why the heck is the times three?
-        f32 size = root->final_dims.v[axis];
+        f32 size = root->final_dims.v[axis] - root->padding[axis]*2;
         root->rel_text_p.v[axis] += (size - root->text_dims.v[axis])*0.5f;
       } break;
     }
     root->final_text_p.v[axis] = root->final_p.v[axis] + root->rel_text_p.v[axis];
   }
-#endif
   
   UI_Widget_IndividualSize indie_size = root->individual_size[axis];
   f32 accumulated_p = 0.0f;
@@ -724,8 +833,16 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
          child;
          child = child->next_sibling)
     {
-      child->rel_parent_p.v[axis] += accumulated_p + root->border_thickness + root->padding[axis];
-      accumulated_p += child->final_dims.v[axis] + root->gap[axis];
+      if (child->position == UI_Widget_Position_Normal)
+      {
+        child->rel_parent_p.v[axis] += accumulated_p + root->border_thickness + root->padding[axis];
+        accumulated_p += child->final_dims.v[axis] + root->gap[axis];
+      }
+      else
+      {
+        ui_calculate_absolute_p_if_absolute(child, axis);
+        child->rel_parent_p.v[axis] += root->border_thickness + root->padding[axis];
+      }
       
       child->final_p.v[axis] = root->final_p.v[axis] + child->rel_parent_p.v[axis];
       ui_calculate_final_positions(child, axis);
@@ -733,13 +850,11 @@ ui_calculate_final_positions(UI_Widget *root, UI_AxisType axis)
   }
   else
   {
-    //
-    // TODO(cj): Consider padding and gap
-    //
     for (UI_Widget *child = root->leftmost_child;
          child;
          child = child->next_sibling)
     {
+      ui_calculate_absolute_p_if_absolute(child, axis);
       child->rel_parent_p.v[axis] += root->border_thickness + root->padding[axis];
       child->final_p.v[axis] = root->final_p.v[axis] + child->rel_parent_p.v[axis];
       ui_calculate_final_positions(child, axis);
@@ -776,6 +891,13 @@ ui_render(UI_Context *ctx, UI_Widget *root)
                                    root->tl_border_colour, root->bl_border_colour,
                                    root->tr_border_colour, root->br_border_colour,
                                    root->border_thickness);
+  }
+  
+  if (root->flags & UI_Widget_Flag_Texture)
+  {
+    UI_TextureClipped tex = root->texture;
+    ui_add_tex_clipped(ctx->quads, ctx->sprite_sheet, root->final_p, final_dims,
+                       tex.clip_p, tex.clip_dims, v4f_make(1,1,1,1));
   }
   
   if ((root->flags & UI_Widget_Flag_StringContent) && (root->text_colour.w != 0.0f))

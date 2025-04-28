@@ -857,15 +857,17 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
   
   ui_begin(ui_ctx, renderer->reso_width, renderer->reso_height, game_update_secs);
   {
+    ui_position_next(ui_ctx, UI_Widget_Position_Absolute);
+    ui_absolute_x_next(ui_ctx, ui_absolute_percent(0.01f));
+    ui_absolute_y_next(ui_ctx, ui_absolute_percent(0.85f));
+    ui_push_texture(ui_ctx, ui_texture(v2f_zero(), v2f_make(16, 16)), 96, 96, str8("testing!!!"));
+    
     ui_border_thickness_push(ui_ctx, 1.0f);
-    ui_padding_x_next(ui_ctx, 14.0f);
-    ui_padding_y_next(ui_ctx, 14.0f);
     ui_bg_colour_next(ui_ctx, rgba(37,33,49,1));
     ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
     ui_vertex_roundness_next(ui_ctx, 8.0f);
     ui_smoothness_push(ui_ctx, 0.75f);
-    //ui_size_y_next(ui_ctx, ui_percent_of_parent_size(1.0f));
-    ui_push_vlayout(ui_ctx, str8("main-sidebar"));
+    ui_push_vlayout(ui_ctx, 0.0f, v2f_make(14.0f, 14.0f), v2f_zero(), str8("main-sidebar"));
     {
       ui_size_x_next(ui_ctx, ui_percent_of_parent_size(1.0f));
       ui_padding_x_next(ui_ctx, 4.0f);
@@ -874,10 +876,9 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
       ui_text_centering_x_next(ui_ctx, UI_Widget_TextCentering_Center);
       ui_push_label(ui_ctx, str8("side-label###Player"));
       
-      ui_gap_x_next(ui_ctx, 16.0f);
-      ui_push_hlayout(ui_ctx, str8("player-section"));
+      ui_push_hlayout(ui_ctx, 0.0f, v2f_zero(), v2f_make(16.0f, 0.0f), str8("player-section"));
       {
-        ui_push_vlayout(ui_ctx, str8("player-section-left-side"));
+        ui_push_vlayout(ui_ctx, 0.0f, v2f_zero(), v2f_zero(), str8("player-section-left-side"));
         {
           ui_push_label(ui_ctx, str8("Wave:"));
           ui_push_label(ui_ctx, str8("Enemies Alive:"));
@@ -886,14 +887,13 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
         }
         ui_vlayout_pop(ui_ctx);
         
-        //ui_border_colour_next(ui_ctx, rgba(255,33,0,1));
         f32 bar_dims = 200;
-        ui_push_vlayout(ui_ctx, str8("player-section-right-side"));
+        ui_push_vlayout(ui_ctx, 0.0f, v2f_zero(), v2f_zero(), str8("player-section-right-side"));
         {
           ui_push_labelf(ui_ctx, str8("WaveNum###%u"), game->wave_number);
           ui_push_labelf(ui_ctx, str8("EntityCount###%u"), game->entity_count - 1);
           
-          //ui_push_progress_stringf(ui_ctx, bar_dims, player->current_hp, rgba(224,120,86,1.0f), player->max_hp, rgba(113,29,56,1), str8("player-health"));
+          // ui_push_progress_stringf(ui_ctx, bar_dims, player->current_hp, rgba(224,120,86,1.0f), player->max_hp, rgba(113,29,56,1), str8("player-health"));
           // TODO(cj): YIKES. This is ugly. We need to find a way to do this nicely.
           // Should we add a Progress Bar in the UI Library, or just find a way to "create" a progress
           // bar using primitives such as these? 
@@ -934,13 +934,13 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
       ui_padding_y_next(ui_ctx, 4.0f);
       ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
       ui_text_centering_x_next(ui_ctx, UI_Widget_TextCentering_Center);
-      ui_push_label(ui_ctx, str8("side-label###TODO: Status Effects"));
+      ui_push_label(ui_ctx, str8("side-label###Stats"));
       
-      ui_gap_x_next(ui_ctx, 16.0f);
-      ui_push_hlayout(ui_ctx, str8("status-effects-section"));
+      ui_push_hlayout(ui_ctx, 0.0f, v2f_zero(), v2f_make(16.0f, 0.0f), str8("stats-section"));
       {
       }
       ui_hlayout_pop(ui_ctx);
+      
     }
     ui_vlayout_pop(ui_ctx);
   }
@@ -979,7 +979,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmd, int nShowCmd)
   Game_State game = {0};//M_Arena_PushStruct(memory.arena, Game_State);
   game_init(&game);
   
-  UI_Context *ui_ctx = ui_create_context(&window.input, &renderer.input_for_rendering.ui_quads, renderer.input_for_rendering.font);
+  UI_Context *ui_ctx = ui_create_context(&window.input, &renderer.input_for_rendering.ui_quads, renderer.input_for_rendering.font, renderer.input_for_rendering.game_sheet);
   
   //u64 test0 = str8_find_first_string(str8("hello###World"), str8("###"), 0);
   LARGE_INTEGER perf_counter_begin;

@@ -9,6 +9,7 @@ enum
   UI_Widget_Flag_StringContent = 0x2,
   UI_Widget_Flag_BackgroundColour = 0x4,
   UI_Widget_Flag_BorderColour = 0x8,
+  UI_Widget_Flag_Texture = 0x10,
 };
 
 typedef u64 UI_Widget_IndividualSizingType;
@@ -21,11 +22,48 @@ enum
   UI_Widget_IndividualSizing_Count,
 };
 
+typedef u64 UI_Metric;
+enum
+{
+  UI_Metric_Pixels,
+  UI_Metric_Percent,
+  UI_Metric_Count,
+};
+
+typedef u64 UI_Anchor;
+enum
+{
+  UI_Anchor_Begin,
+  UI_Anchor_Center,
+  UI_Anchor_End,
+  UI_Anchor_Count,
+};
+
+typedef struct
+{
+  UI_Metric metric;
+  f32 value;
+} UI_Absolute_Position;
+
+typedef u64 UI_Widget_PositionType;
+enum
+{
+  UI_Widget_Position_Normal,
+  UI_Widget_Position_Absolute,
+  UI_Widget_Position_Count,
+};
+
 typedef struct
 {
   UI_Widget_IndividualSizingType type;
   f32 value;
 } UI_Widget_IndividualSize;
+
+typedef struct
+{
+  v2f clip_p;
+  v2f clip_dims;
+} UI_TextureClipped;
 
 typedef u64 UI_Widget_TextCenteringType;
 enum
@@ -66,6 +104,7 @@ struct UI_Widget
   
   // NOTE(cj): String context
   String_U8_Const str8_content;
+  UI_TextureClipped texture;
   
   // NOTE(cj): used for computing layout
   v2f rel_text_p;
@@ -74,6 +113,8 @@ struct UI_Widget
   f32 gap[UI_Axis_Count];
   UI_Widget_IndividualSize individual_size[UI_Axis_Count];
   UI_Widget_TextCenteringType text_centering[UI_Axis_Count];
+  UI_Widget_PositionType position;
+  UI_Absolute_Position absolute_p[UI_Axis_Count]; // only used when position = Absolute
   v2f text_dims;
   
   // NOTE(cj): final calculation
@@ -169,6 +210,7 @@ typedef struct
   OS_Input *input;
   R_UI_QuadArray *quads;
   R_Font font;
+  R_Texture2D sprite_sheet;
   
   f32 dt_step_secs;
   
@@ -179,6 +221,12 @@ typedef struct
   
   UI_DefineStack(UI_Widget_IndividualSize, size_x);
   UI_DefineStack(UI_Widget_IndividualSize, size_y);
+  
+  UI_DefineStack(UI_Widget_PositionType, position);
+  UI_DefineStack(UI_Absolute_Position, absolute_x);
+  UI_DefineStack(UI_Absolute_Position, absolute_y);
+  
+  UI_DefineStack(UI_TextureClipped, texture);
   
   UI_DefineStack(f32, padding_x);
   UI_DefineStack(f32, padding_y);
@@ -208,6 +256,12 @@ UI_DefineStackFN(UI_Widget *, parent);
 
 UI_DefineStackFN(UI_Widget_IndividualSize, size_x);
 UI_DefineStackFN(UI_Widget_IndividualSize, size_y);
+
+UI_DefineStackFN(UI_Widget_PositionType, position);
+UI_DefineStackFN(UI_Absolute_Position, absolute_x);
+UI_DefineStackFN(UI_Absolute_Position, absolute_y);
+
+UI_DefineStackFN(UI_TextureClipped, texture);
 
 UI_DefineStackFN(f32, padding_x);
 UI_DefineStackFN(f32, padding_y);
@@ -300,18 +354,22 @@ inline function UI_Widget_IndividualSize ui_null_size(void);
 inline function UI_Widget_IndividualSize ui_pixel_size(f32 value);
 inline function UI_Widget_IndividualSize ui_children_sum_size(f32 initial_size);
 inline function UI_Widget_IndividualSize ui_percent_of_parent_size(f32 percent);
+inline function UI_Absolute_Position ui_absolute_pixels(f32 v);
+inline function UI_Absolute_Position ui_absolute_percent(f32 v);
+inline function UI_TextureClipped ui_texture(v2f clip_p, v2f clip_dims);
 
 // UI init
-function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font);
+function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font, R_Texture2D sprite_sheet);
 function void        ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs);
 function void        ui_end(UI_Context *ctx);
 
 // UI Widgets
-function UI_Widget *ui_push_vlayout(UI_Context *ctx, String_U8_Const name);
-function UI_Widget *ui_push_hlayout(UI_Context *ctx, String_U8_Const name);
+function UI_Widget *ui_push_vlayout(UI_Context *ctx, f32 init_height, v2f padding, v2f gap, String_U8_Const name);
+function UI_Widget *ui_push_hlayout(UI_Context *ctx, f32 init_width, v2f padding, v2f gap, String_U8_Const name);
 function UI_Widget *ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...);
 function UI_Widget *ui_push_label(UI_Context *ctx, String_U8_Const str);
-function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
+function UI_Widget *ui_push_texture(UI_Context *ctx, UI_TextureClipped texture, f32 width, f32 height, String_U8_Const str);
+//function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
 //function UI_Widget *ui_push_progress_bar_with_stringf(UI_Context *ctx, f32 current_progress, v4f progress_colour, f32 max_progress, v4f border_colour, String_U8_Const str, ...);
 //function UI_Widget *ui_push_text_input(UI_Context *ctx, String_U8_Const name, String_U8 *result);
 
