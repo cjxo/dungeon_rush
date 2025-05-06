@@ -6,10 +6,11 @@ typedef u64 UI_Widget_Flag;
 enum
 {
   UI_Widget_Flag_Clickable = 0x1,
-  UI_Widget_Flag_StringContent = 0x2,
-  UI_Widget_Flag_BackgroundColour = 0x4,
-  UI_Widget_Flag_BorderColour = 0x8,
-  UI_Widget_Flag_Texture = 0x10,
+  UI_Widget_Flag_Hoverable = 0x2,
+  UI_Widget_Flag_StringContent = 0x4,
+  UI_Widget_Flag_BackgroundColour = 0x8,
+  UI_Widget_Flag_BorderColour = 0x10,
+  UI_Widget_Flag_Texture = 0x20,
 };
 
 typedef u64 UI_Widget_IndividualSizingType;
@@ -81,6 +82,30 @@ enum
   UI_Axis_Count,
 };
 
+// TODO(cj): Remove this IF we do not need this
+typedef u64 UI_Widget_ProgressionFlag;
+enum
+{
+  UI_Widget_Progression_Gradient = 0x1,
+  UI_Widget_Progression_MinMaxPairString = 0x2,
+};
+
+// TODO(cj): Remove this IF we do not need this
+typedef struct
+{
+  UI_Widget_ProgressionFlag flags;
+  UI_AxisType direction;
+  f32 current, max;
+} UI_Widget_Progression;
+
+typedef struct
+{
+  u8 released;
+  u8 pressed;
+  u8 held;
+  u8 hover;
+} UI_InteractResult;
+
 typedef union
 {
   u64 key;
@@ -136,6 +161,8 @@ struct UI_Widget
   f32 border_thickness;
   
   v4f text_colour;
+  
+  UI_Widget_Progression progression;
   
   f32 hot_t, active_t;
   f32 smoothness;
@@ -250,6 +277,8 @@ typedef struct
   UI_DefineStack(UI_Widget_TextCenteringType, text_centering_x);
   UI_DefineStack(UI_Widget_TextCenteringType, text_centering_y);
   UI_DefineStack(v4f, text_colour);
+  
+  UI_DefineStack(UI_Widget_Progression, progression);
 } UI_Context;
 
 UI_DefineStackFN(UI_Widget *, parent);
@@ -285,6 +314,8 @@ UI_DefineStackFN(f32, smoothness);
 UI_DefineStackFN(UI_Widget_TextCenteringType, text_centering_x);
 UI_DefineStackFN(UI_Widget_TextCenteringType, text_centering_y);
 UI_DefineStackFN(v4f, text_colour);
+
+UI_DefineStackFN(UI_Widget_Progression, progression);
 
 inline function void
 ui_size_push(UI_Context *ctx, UI_Widget_IndividualSize x, UI_Widget_IndividualSize y)
@@ -357,6 +388,7 @@ inline function UI_Widget_IndividualSize ui_percent_of_parent_size(f32 percent);
 inline function UI_Absolute_Position ui_absolute_pixels(f32 v);
 inline function UI_Absolute_Position ui_absolute_percent(f32 v);
 inline function UI_TextureClipped ui_texture(v2f clip_p, v2f clip_dims);
+inline function UI_Widget_Progression ui_progression(UI_Widget_ProgressionFlag flags, UI_AxisType direction, f32 current, f32 max);
 
 // UI init
 function UI_Context *ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font, R_Texture2D sprite_sheet);
@@ -369,7 +401,8 @@ function UI_Widget *ui_push_hlayout(UI_Context *ctx, f32 init_width, v2f padding
 function UI_Widget *ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...);
 function UI_Widget *ui_push_label(UI_Context *ctx, String_U8_Const str);
 function UI_Widget *ui_push_texture(UI_Context *ctx, UI_TextureClipped texture, f32 width, f32 height, String_U8_Const str);
-//function UI_Widget *ui_push_buttonf(UI_Context *ctx, String_U8_Const str, ...);
+function UI_Widget *ui_push_progression(UI_Context *ctx, UI_Widget_ProgressionFlag flags, UI_AxisType direction, f32 current, f32 max, String_U8_Const str);
+function UI_InteractResult ui_push_button(UI_Context *ctx, String_U8_Const str);
 //function UI_Widget *ui_push_progress_bar_with_stringf(UI_Context *ctx, f32 current_progress, v4f progress_colour, f32 max_progress, v4f border_colour, String_U8_Const str, ...);
 //function UI_Widget *ui_push_text_input(UI_Context *ctx, String_U8_Const name, String_U8 *result);
 

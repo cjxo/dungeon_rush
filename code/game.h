@@ -130,13 +130,13 @@ enum
 };
 typedef struct
 {
-  StatusEffect_Type type;
-  
-  // this value depends on the type.
+  b32 is_valid;
+  // this value depends on the type. must be nonnegative.
   f32 intensity;
   
   // this counts down to zero.
-  f32 duration_left_secs;
+  f32 duration_current_secs;
+  f32 duration_max_secs;
 } StatusEffect;
 
 #if 0
@@ -200,8 +200,8 @@ typedef struct
   Consumable consumables[32];
   
   // NOTE(cj): player status effects.
-  u64 status_effects_count;
-  StatusEffect status_effects[8];
+  // my status effects overwrites, not stacks.
+  StatusEffect status_effects[StatusEffectType_Count];
   
   // NOTE(cj): Wave spawner variables
   u32 wave_number;

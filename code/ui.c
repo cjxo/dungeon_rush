@@ -327,6 +327,17 @@ ui_absolute_percent(f32 v)
   return(result);
 }
 
+inline function UI_Widget_Progression
+ui_progression(UI_Widget_ProgressionFlag flags, UI_AxisType direction, f32 current, f32 max)
+{
+  UI_Widget_Progression result;
+  result.flags = flags;
+  result.direction = direction;
+  result.current = current;
+  result.max = max;
+  return(result);
+}
+
 function UI_Context *
 ui_create_context(OS_Input *input, R_UI_QuadArray *quads, R_Font font, R_Texture2D sprite_sheet)
 {
@@ -501,7 +512,90 @@ ui_push_widget(UI_Context *ctx, String_U8_Const identifier, UI_Widget_Flag flags
   result->text_centering[UI_Axis_X] = ui_text_centering_x_peek_or_auto_pop(ctx);
   result->text_centering[UI_Axis_Y] = ui_text_centering_y_peek_or_auto_pop(ctx);
   
+  result->progression = ui_progression_peek_or_auto_pop(ctx);
+  
   Assert(result);
+  return(result);
+}
+
+function b32
+point_in_rect(v2f p, v2f dims, v2f point)
+{
+  f32 max_x = p.x + dims.x;
+  f32 max_y = p.y + dims.y;
+  
+  if ((point.x < p.x) || (point.x > max_x))
+  {
+    return 0;
+  }
+  
+  
+  if ((point.y < p.y) || (point.y > max_y))
+  {
+    return 0;
+  }
+  
+  return 1;
+}
+
+function b32
+ui_check_children_hover(UI_Widget *widget, v2f mouse_p)
+{
+  if ((widget->flags & UI_Widget_Flag_Clickable) &&
+      point_in_rect(widget->final_p, widget->final_dims, mouse_p))
+  {
+    return 1;
+  }
+  
+  for (UI_Widget *child = widget->leftmost_child;
+       child;
+       child = child->next_sibling)
+  {
+    if (ui_check_children_hover(child, mouse_p))
+    {
+      return 1;
+    }
+  }
+  
+  return 0;
+}
+
+function UI_InteractResult
+ui_handle_interaction(UI_Context *ctx, UI_Widget *widget)
+{
+  UI_InteractResult result = {0};
+  v2f mouse_p = v2f_make((f32)ctx->input->mouse_x, (f32)ctx->input->mouse_y);
+  if (point_in_rect(widget->final_p, widget->final_dims, mouse_p))
+  {
+    b32 is_hovering_on_children = 0;
+    for (UI_Widget *child = widget->leftmost_child;
+         child;
+         child = child->next_sibling)
+    {
+      if (ui_check_children_hover(child, mouse_p))
+      {
+        is_hovering_on_children = 1;
+        break;
+      }
+    }
+    
+    if (!is_hovering_on_children)
+    {
+      result.hover = 1;
+    }
+    
+    if (widget->flags & UI_Widget_Flag_Clickable)
+    {
+      u8 released = OS_ButtonReleased(ctx->input, OS_Input_ButtonType_Left);
+      u8 pressed = OS_ButtonPressed(ctx->input, OS_Input_ButtonType_Left);
+      u8 held = OS_ButtonHeld(ctx->input, OS_Input_ButtonType_Left);
+      
+      result.released = released;
+      result.pressed = pressed;
+      result.held = held;
+    }
+  }
+  
   return(result);
 }
 
@@ -568,6 +662,7 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   ctx->text_colour_ptr = 0;
   ctx->text_centering_x_ptr = 0;
   ctx->text_centering_y_ptr = 0;
+  ctx->progression_ptr = 0;
   
   ui_size_x_push(ctx, ui_null_size());
   ui_size_y_push(ctx, ui_null_size());
@@ -599,6 +694,8 @@ ui_begin(UI_Context *ctx, u32 reso_width, u32 reso_height, f32 dt_step_secs)
   
   ui_text_centering_x_push(ctx, UI_Widget_TextCentering_Begin);
   ui_text_centering_y_push(ctx, UI_Widget_TextCentering_Begin);
+  
+  ui_progression_push(ctx, ui_progression(0, 0, 0, 0));
   
   ui_size_x_next(ctx, ui_pixel_size(max_width));
   ui_size_y_next(ctx, ui_children_sum_size(max_height));
@@ -664,6 +761,17 @@ ui_push_labelf(UI_Context *ctx, String_U8_Const str, ...)
   
   end_temporary_memory(temp);
   return(result);
+}
+
+function UI_InteractResult
+ui_push_button(UI_Context *ctx, String_U8_Const str)
+{
+  UI_Widget *result = ui_push_widget(ctx, str,
+                                     UI_Widget_Flag_StringContent |
+                                     UI_Widget_Flag_BackgroundColour |
+                                     UI_Widget_Flag_BorderColour |
+                                     UI_Widget_Flag_Clickable);
+  return ui_handle_interaction(ctx, result);
 }
 
 function UI_Widget *

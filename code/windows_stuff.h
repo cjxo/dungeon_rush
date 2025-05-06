@@ -40,6 +40,8 @@ enum
 #define OS_KeyReleased(inp,keytype) ((inp)->key[keytype]&OS_Input_InteractFlag_Released)
 #define OS_KeyHeld(inp,keytype) ((inp)->key[keytype]&OS_Input_InteractFlag_Held)
 #define OS_ButtonReleased(inp,btntype) ((inp)->button[btntype]&OS_Input_InteractFlag_Released)
+#define OS_ButtonPressed(inp,btntype) ((inp)->button[btntype]&OS_Input_InteractFlag_Pressed)
+#define OS_ButtonHeld(inp,btntype) ((inp)->button[btntype]&OS_Input_InteractFlag_Held)
 typedef struct
 {
   OS_Input_InteractFlag key[OS_Input_KeyType_Count];

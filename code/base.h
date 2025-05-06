@@ -99,6 +99,7 @@ typedef struct
 typedef String_U8_Const String_U8;
 
 function String_U8_Const str8_format_va(M_Arena *arena, String_U8_Const str, va_list args0);
+function String_U8_Const str8_format(M_Arena *arena, String_U8_Const string, ...);
 function u64             str8_calculate_hash(String_U8_Const str, u64 base);
 function u64             str8_find_first_string(String_U8_Const str, String_U8_Const to_find, u64 offset_from_beginning_of_source);
 function b32             str8_equal_strings(String_U8_Const a, String_U8_Const b);

@@ -8,6 +8,7 @@
 #include <dxgi1_2.h>
 #include <dxgidebug.h>
 #include <d3dcompiler.h>
+#include <Windowsx.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "./ext/stb_image.h"
@@ -153,14 +154,15 @@ make_health_potion(Game_State *game, v3f p, v3f dims)
 }
 
 function StatusEffect *
-make_healing_status_effect(Game_State *game, StatusEffect_Type type,
-                           f32 intensity, f32 countdown_secs)
+make_status_effect(Game_State *game, StatusEffect_Type type,
+                   f32 intensity, f32 duration_max_secs)
 {
-  Assert(game->status_effects_count < ArrayCount(game->status_effects));
-  StatusEffect *result = game->status_effects + game->status_effects_count++;
-  result->type = type;
+  StatusEffect *result = game->status_effects + type;
+  // TODO(cj): THINK ABOUT THIS MORE!
+  result->is_valid = 1;
   result->intensity = intensity;
-  result->duration_left_secs = countdown_secs;
+  result->duration_current_secs = 0;
+  result->duration_max_secs = duration_max_secs;
   return(result);
 }
 
@@ -282,6 +284,16 @@ game_init(Game_State *game)
   // NOTE(cj): Consumable stuff
   //
   game->consumable_spawn_cooldown = 7.0f;
+  
+  //
+  // NOTE(cj): Init player statuseffects
+  //
+  for (u64 status_effect_idx = 0;
+       status_effect_idx < StatusEffectType_Count;
+       ++status_effect_idx)
+  {
+    game->status_effects[status_effect_idx].is_valid = 0;
+  }
 }
 
 function Animation_Tick_Result
@@ -555,40 +567,38 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
         //
         // NOTE(cj): Update status effects
         //
-        ForLoopU64(status_effect_idx, game->status_effects_count)
+        ForLoopU64(status_effect_idx, StatusEffectType_Count)
         {
           StatusEffect *status_effect = game->status_effects + status_effect_idx;
-          if (status_effect->duration_left_secs <= 0.0f)
+          if (status_effect->is_valid)
           {
-            if (status_effect_idx != (game->status_effects_count - 1))
+            if (status_effect->duration_current_secs >= status_effect->duration_max_secs)
             {
-              game->consumables[status_effect_idx--] = game->consumables[game->status_effects_count - 1];
+              status_effect->is_valid = 0;
             }
-            --game->status_effects_count;
-          }
-          else
-          {
-            u32 prev_duration = (u32)status_effect->duration_left_secs;
-            status_effect->duration_left_secs -= game_update_secs;
-            u32 next_duration = (u32)status_effect->duration_left_secs;
-            
-            switch (status_effect->type)
+            else
             {
-              case StatusEffectType_Healing:
-              {
-                if (prev_duration != next_duration)
-                {
-                  player->current_hp += status_effect->intensity;
-                  if (player->current_hp > player->max_hp)
-                  {
-                    player->current_hp = player->max_hp;
-                  }
-                }
-              } break;
+              u32 prev_duration = (u32)status_effect->duration_current_secs;
+              status_effect->duration_current_secs += game_update_secs;
+              u32 next_duration = (u32)status_effect->duration_current_secs;
               
-              InvalidDefaultCase();
+              switch (status_effect_idx)
+              {
+                case StatusEffectType_Healing:
+                {
+                  if (prev_duration != next_duration)
+                  {
+                    player->current_hp += status_effect->intensity;
+                    if (player->current_hp > player->max_hp)
+                    {
+                      player->current_hp = player->max_hp;
+                    }
+                  }
+                } break;
+                
+                InvalidDefaultCase();
+              }
             }
-            
           }
         }
         
@@ -728,7 +738,7 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
             {
               case ConsumableType_HealthPotion:
               {
-                make_healing_status_effect(game, StatusEffectType_Healing, 2.0f, 5.0f);
+                make_status_effect(game, StatusEffectType_Healing, 2.0f, 5.0f);
               } break;
               InvalidDefaultCase();
             }
@@ -859,8 +869,45 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
   {
     ui_position_next(ui_ctx, UI_Widget_Position_Absolute);
     ui_absolute_x_next(ui_ctx, ui_absolute_percent(0.01f));
-    ui_absolute_y_next(ui_ctx, ui_absolute_percent(0.85f));
-    ui_push_texture(ui_ctx, ui_texture(v2f_zero(), v2f_make(16, 16)), 96, 96, str8("testing!!!"));
+    ui_absolute_y_next(ui_ctx, ui_absolute_percent(0.92f));
+    ui_push_hlayout(ui_ctx, 0, v2f_make(0, 0), v2f_make(8, 0), str8("status-effect-container"));
+    {
+      M_Arena *arena = get_transient_arena(0, 0);
+      for (u64 status_effect_idx = 0;
+           status_effect_idx < StatusEffectType_Count;
+           ++status_effect_idx)
+      {
+        Temporary_Memory temp = begin_temporary_memory(arena);
+        
+        StatusEffect *effect = game->status_effects + status_effect_idx;
+        if (effect->is_valid)
+        {
+          f32 tex_width = 32;
+          f32 tex_height = 32;
+          ui_padding_x_next(ui_ctx, 2);
+          ui_padding_y_next(ui_ctx, 2);
+          ui_border_thickness_push(ui_ctx, 0.0f);
+          ui_bg_colour_next(ui_ctx, rgba(38, 57, 51, 1));
+          ui_size_x_next(ui_ctx, ui_pixel_size(tex_width));
+          ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8_format(arena, str8("%llu###status-effect"), status_effect_idx), UI_Widget_Flag_BackgroundColour));
+          {
+            ui_vertex_roundness_next(ui_ctx, 3);
+            ui_bg_colour_next(ui_ctx, rgba(63, 132, 77, 1));
+            ui_size_push(ui_ctx, ui_pixel_size(tex_width*(1.0f - effect->duration_current_secs/effect->duration_max_secs)), ui_pixel_size(tex_height));
+            ui_parent_next(ui_ctx, ui_push_widget(ui_ctx, str8_format(arena, str8("%llu###status-effect-progress"), status_effect_idx), UI_Widget_Flag_BackgroundColour));
+            ui_size_pop(ui_ctx);
+            
+            ui_position_next(ui_ctx, UI_Widget_Position_Absolute);
+            ui_absolute_x_next(ui_ctx, ui_absolute_percent(0));
+            ui_absolute_y_next(ui_ctx, ui_absolute_percent(0));
+            ui_push_texture(ui_ctx, ui_texture(v2f_make(192, 16), v2f_make(16, 16)), tex_width, tex_height, str8_format(arena, str8("%llu###status-effect-texture"), status_effect_idx));
+          }
+          
+          end_temporary_memory(temp);
+        }
+      }
+    }
+    ui_hlayout_pop(ui_ctx);
     
     ui_border_thickness_push(ui_ctx, 1.0f);
     ui_bg_colour_next(ui_ctx, rgba(37,33,49,1));
@@ -941,6 +988,24 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
       }
       ui_hlayout_pop(ui_ctx);
       
+      ui_size_x_next(ui_ctx, ui_percent_of_parent_size(1.0f));
+      ui_padding_x_next(ui_ctx, 4.0f);
+      ui_padding_y_next(ui_ctx, 4.0f);
+      ui_border_colour_next(ui_ctx, v4f_make(0.4f,0.2f,0.6f,1.0f));
+      ui_text_centering_x_next(ui_ctx, UI_Widget_TextCentering_Center);
+      ui_push_label(ui_ctx, str8("side-label###Debug Hax"));
+      
+      ui_push_vlayout(ui_ctx, 0.0f, v2f_zero(), v2f_make(0, 0), str8("debug-bar"));
+      {
+        ui_border_thickness_next(ui_ctx, 1.0f);
+        ui_border_colour_next(ui_ctx, rgba(172, 177, 63, 1));
+        ui_bg_colour_next(ui_ctx, rgba(70, 150, 67, 1));
+        if (ui_push_button(ui_ctx, str8("Healing Effect")).released)
+        {
+          make_status_effect(game, StatusEffectType_Healing, 2.0f, 5.0f);
+        }
+      }
+      ui_vlayout_pop(ui_ctx);
     }
     ui_vlayout_pop(ui_ctx);
   }

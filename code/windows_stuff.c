@@ -137,6 +137,15 @@ w32_window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
       user_window->input.button[OS_Input_ButtonType_Right] &= ~OS_Input_InteractFlag_Held;
     } break;
     
+    case WM_MOUSEMOVE:
+    {
+      user_window->input.prev_mouse_x = user_window->input.mouse_x;
+      user_window->input.prev_mouse_y = user_window->input.mouse_y;
+      
+      user_window->input.mouse_x = GET_X_LPARAM(lparam);
+      user_window->input.mouse_y = GET_Y_LPARAM(lparam);
+    } break;
+    
     default:
     {
       result = DefWindowProc(window, message, wparam, lparam);

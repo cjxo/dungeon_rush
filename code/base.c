@@ -161,6 +161,18 @@ str8_format_va(M_Arena *arena, String_U8_Const str, va_list args0)
   return(result);
 }
 
+function String_U8_Const
+str8_format(M_Arena *arena, String_U8_Const string, ...)
+{
+  va_list args;
+  va_start(args, string);
+  
+  String_U8 result = str8_format_va(arena, string, args);
+  
+  va_end(args);
+  return(result);
+}
+
 function u64
 str8_calculate_hash(String_U8_Const str, u64 base)
 {
