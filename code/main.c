@@ -264,7 +264,7 @@ game_init(Game_State *game)
     
     player->player.level = 1;
     player->player.current_experience = 0;
-    player->player.max_experience = 20;
+    player->player.max_experience = 5;
   }
   
   prng32_seed(&game->prng, 13123);
@@ -294,6 +294,9 @@ game_init(Game_State *game)
   {
     game->status_effects[status_effect_idx].is_valid = 0;
   }
+  
+  game->experience_gems = 0;
+  game->free_experience_gems = 0;
 }
 
 function Animation_Tick_Result
@@ -362,6 +365,40 @@ draw_health_bar(R_Game_QuadArray *quads, Entity *entity)
   
   game_add_rect(quads, hp_p, (v3f){ 128.0f, 8.0f, 0.0f }, (v4f){ 1, 0, 0, 1 });
   game_add_rect(quads, hp_p_green, (v3f){ 128.0f*percent_occupy, 8.0f, 0.0f }, (v4f){ 0, 1, 0, 1 });
+}
+
+function void
+spawn_experience_gem(Game_State *game, M_Arena *arena, v3f approx_p, u64 gem_count)
+{
+  f32 angle_of_elevation = DegToRad(70.0f);
+  f32 delta_theta_xz = DegToRad(360.0f / (f32)gem_count);
+  
+  for (u64 index = 0; index < gem_count; ++index)
+  {
+    Experience_Gem *gem = 0;
+    if (game->free_experience_gems)
+    {
+      gem = game->free_experience_gems;
+      game->free_experience_gems = game->free_experience_gems->next;
+    }
+    else
+    {
+      gem = M_Arena_PushStruct(arena, Experience_Gem);
+    }
+    
+    f32 xz_theta = delta_theta_xz * (f32)index;
+    
+    gem->p = approx_p;
+    gem->dims = v3f_make(16, 16, 0);
+    gem->countdown_secs_before_dead = 20.0f;
+    
+    f32 speed = 256.0f;
+    gem->dP = v3f_make(speed*cosf(angle_of_elevation)*cosf(xz_theta), speed*sinf(angle_of_elevation), speed*cosf(angle_of_elevation)*sinf(xz_theta));
+    gem->t_countdown = 2*gem->dP.y/ExperienceGem_G;
+    
+    gem->next = game->experience_gems;
+    game->experience_gems = gem;
+  }
 }
 
 function void
@@ -520,6 +557,7 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
   
   // hehehehehhehe... my mind just randomly told me to try this...
   // dont mind me.
+  // NOTE(cj): Update Entities.
   ForLoopU64(entity_idx, game->entity_count)
   {
     Entity *entity = game->entities + entity_idx;
@@ -598,6 +636,85 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
                 
                 InvalidDefaultCase();
               }
+            }
+          }
+        }
+        
+        //
+        // TODO(cj): Should experience gems be generated entities?
+        //
+        //
+        // NOTE(cj): Update experience gems
+        //
+        {
+          u32 experience_accum = 0;
+          for (Experience_Gem **gem = &game->experience_gems; *gem;)
+          {
+            if ((*gem)->t_countdown > 0)
+            {
+              f32 g = -ExperienceGem_G;
+              v3f P = (*gem)->p;
+              v3f dP = (*gem)->dP;
+              
+              P.x += dP.x * game_update_secs;
+              // TODO(cj): For now, we add the Z because we havent take into account the "depth" yet!
+              P.y += 0.5f*g*game_update_secs*game_update_secs + dP.y*game_update_secs + dP.z * game_update_secs;
+              P.z += dP.z * game_update_secs;
+              
+              dP.y += g*game_update_secs;
+              
+              (*gem)->p = P;
+              (*gem)->dP = dP;
+              
+              (*gem)->t_countdown -= game_update_secs;
+            }
+            
+            b32 collided = check_aabb_collision_xy(player->p.xy,
+                                                   (v2f)
+                                                   {
+                                                     player->dims.x*0.5f,
+                                                     player->dims.y*0.5f,
+                                                   },
+                                                   (*gem)->p.xy,
+                                                   (v2f){(*gem)->dims.x*0.5f, (*gem)->dims.y*0.5f});
+            
+            if (collided || ((*gem)->countdown_secs_before_dead <= 0))
+            {
+              Experience_Gem *temp = *gem;
+              (*gem) = (*gem)->next;
+              temp->next = game->free_experience_gems;
+              game->free_experience_gems = temp;
+              
+              experience_accum += 2;
+            }
+            else
+            {
+              v3f P = (*gem)->p;
+              // TODO(cj): For now, ignore Z.
+              P.z = 0;
+              (*gem)->countdown_secs_before_dead -= game_update_secs;
+              game_add_tex_clipped(&renderer->filled_quads,
+                                   P, (*gem)->dims,
+                                   v2f_make(192, 32), v2f_make(16, 16),
+                                   v4f_make(1, 1, 1, 1),
+                                   0);
+              gem = &((*gem)->next);
+            }
+          }
+          
+          if (experience_accum)
+          {
+            Player *pl = &player->player;
+            pl->current_experience += experience_accum;
+            if (pl->current_experience >= pl->max_experience)
+            {
+              u32 residue = pl->current_experience - pl->max_experience;
+              
+              // NOTE(cj): Pokemon's experience formula.
+              // https://bulbapedia.bulbagarden.net/wiki/Experience
+              pl->level += 1;
+              pl->max_experience = (5 * pl->level * pl->level * pl->level) / 4;
+              pl->current_experience = residue;
             }
           }
         }
@@ -805,11 +922,15 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
         //
         if (!the_attack_already_started && delete_me)
         {
+          // TODO(cj): We want a certain amount of exp generated with respect to a death of an entity.
+          spawn_experience_gem(game, memory->arena, entity->p, 5);
+          
           if (entity_idx != (game->entity_count - 1))
           {
             game->entities[entity_idx--] = game->entities[game->entity_count - 1];
           }
           --game->entity_count;
+          
         }
         else if (the_attack_already_started || i_collided_with_player)
         {
@@ -930,6 +1051,7 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
           ui_push_label(ui_ctx, str8("Wave:"));
           ui_push_label(ui_ctx, str8("Enemies Alive:"));
           ui_push_label(ui_ctx, str8("Health:"));
+          ui_push_label(ui_ctx, str8("Level:"));
           ui_push_label(ui_ctx, str8("Experience:"));
         }
         ui_vlayout_pop(ui_ctx);
@@ -955,6 +1077,8 @@ game_update_and_render(Game_State *game, UI_Context *ui_ctx, OS_Input *input, Ga
             ui_bg_colour_next(ui_ctx, rgba(224,120,86,1.0f));
             ui_push_labelf(ui_ctx, str8("player-hp###%u / %u"), (u32)player->current_hp, (u32)player->max_hp);
           }
+          
+          ui_push_labelf(ui_ctx, str8("player-level###%u"), player->player.level);
           
           ui_bg_colour_next(ui_ctx, rgba(64,29,112,1));
           ui_size_push(ui_ctx, ui_pixel_size(bar_dims), ui_pixel_size(25.0f));

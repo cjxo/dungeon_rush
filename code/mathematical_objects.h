@@ -3,6 +3,9 @@
 #ifndef MATHEMATICAL_OBJECTS_H
 #define MATHEMATICAL_OBJECTS_H
 
+#define DegToRad(deg) (0.01745329251f*(f32)(deg))
+#define RadToDeg(rad) (57.2957795131f*(f32)(rad))
+
 inline function f32 absolute_value_f32(f32 a);
 inline function b32 close_enough_zero_f32(f32 a, f32 tolerance);
 

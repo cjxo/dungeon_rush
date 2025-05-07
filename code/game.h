@@ -155,6 +155,20 @@ typedef struct
 } Consumable;
 #endif
 
+#define ExperienceGem_G 700.0f
+typedef struct Experience_Gem Experience_Gem;
+struct Experience_Gem
+{
+  v3f p;
+  v3f dims;
+  f32 countdown_secs_before_dead;
+  
+  v3f dP;
+  f32 t_countdown;
+  
+  Experience_Gem *next;
+};
+
 typedef struct Entity Entity;
 struct Entity
 {
@@ -202,6 +216,9 @@ typedef struct
   // NOTE(cj): player status effects.
   // my status effects overwrites, not stacks.
   StatusEffect status_effects[StatusEffectType_Count];
+  
+  Experience_Gem *experience_gems;
+  Experience_Gem *free_experience_gems;
   
   // NOTE(cj): Wave spawner variables
   u32 wave_number;
